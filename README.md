@@ -1,4 +1,4 @@
-#SocketCAN over TCP
+# SocketCAN over TCP
 For when you want to use the [Python CAN package](https://github.com/hardbyte/python-can) but are running on a resource-constrained device, such as a Raspberry Pi.
 
 I've found that for a busy bus (> 1000 messages/ second), my Raspberry Pi was dropping messages: we'd reached the limit of what Python could achieve. However, it's still a really powerful library for processing messages and integrating other services. 
