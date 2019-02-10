@@ -317,7 +317,6 @@ void* write_poll(void* args)
             bufpnt += frame_sz;
         }
         bufpnt = write_buf; //reset.
-        sent++;
     }
 }
 
