@@ -46,7 +46,7 @@ typedef struct
     int can_sock;
 } can_write_sockets; // used to supply multiple thread args.
 
-/* FUNCTIONS */
+/* FUNCTION DECLARATIONS */
 
 // controlled exit in event of SIGINT
 void handle_signal(int signal);
@@ -79,7 +79,7 @@ void deserialize_frame(char* ptr,timestamped_frame* tf);
 // print CAN frame into to stdout (for debug)
 void print_frame(timestamped_frame* tf);
 
-/* globals */
+/* GLOBALS */
 pthread_mutex_t read_mutex = PTHREAD_MUTEX_INITIALIZER;
 sig_atomic_t poll = true; // for "infinite loops" in threads.
 bool ready_to_send = true; // only access inside of mutex
@@ -88,6 +88,7 @@ size_t socketcan_bytes_available;// only access inside of mutex
 char read_buf_can[BUF_SZ]; // where serialized CAN frames are dumped
 char read_buf_tcp[BUF_SZ]; // where serialized CAN frames are copied to and sent to the server
 
+/* FUNCTIONS */
 void handle_signal(int signal) {
     if (signal == SIGINT)
     {
@@ -210,6 +211,7 @@ void* read_poll_can(void* args)
         memcpy(bufpnt,(char*)(&frame.data),sizeof(frame.data));
         bufpnt += sizeof(frame.data);
         count += sizeof(frame.data);
+
 #if DEBUG
         printf("message read\n");
 #endif
@@ -276,9 +278,9 @@ void* write_poll(void* args)
     struct can_frame frame;
     
     char write_buf[BUF_SZ];
-    size_t count = 0;
     char* bufpnt = write_buf;
-    const size_t frame_sz = 13; // 4 + 1 + 8
+    const size_t frame_sz = 13; // 4 id + 1 dlc + 8 bytes
+    const size_t can_struct_sz = sizeof(struct can_frame);
 
     while(poll)
     {
@@ -286,12 +288,13 @@ void* write_poll(void* args)
         if(num_bytes_tcp == 0)
         {
             //TODO: don't use error() call handle_signal
-            error("Socket closed at other end... exitng.\n");
+            error("Socket closed at other end... exiting.\n");
         }
 #if DEBUG
         printf("%d bytes read from TCP.\n",num_bytes_tcp);
 #endif
         int num_frames = num_bytes_tcp / frame_sz;
+
         for(int n = 0;n < num_frames;n++)
         {
             frame.can_id = ((uint32_t)(*bufpnt) << 0) | ((uint32_t)(*(bufpnt+1)) << 8) | ((uint32_t)(*(bufpnt+2)) << 16) | ((uint32_t)(*(bufpnt+3)) << 24);
@@ -305,11 +308,16 @@ void* write_poll(void* args)
             }
             printf("\n");
 #endif
-            int num_bytes_can = write(socks->can_sock, &frame, sizeof(struct can_frame));
-            // TODO: check num_bytes_can
+            int num_bytes_can = write(socks->can_sock, &frame, can_struct_sz);
+            if (num_bytes_can < can_struct_sz)
+            {
+                printf("only send %d bytes of can message.\n",num_bytes_can);
+                error("failed to send complete CAN message!\n");
+            }
             bufpnt += frame_sz;
         }
         bufpnt = write_buf; //reset.
+        sent++;
     }
 }
 

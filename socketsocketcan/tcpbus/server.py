@@ -1,5 +1,6 @@
 import socket
 from queue import Queue
+from queue import Empty as QueueEmpty
 from threading import Thread
 import can
 from time import sleep
@@ -108,9 +109,10 @@ class TCPBus(can.BusABC):
                     # socket's been closed.
                     self._stop_threads()
                     break                
-                # process the 1 or more messages we just received
-                num_frames = len(data) // self.FRAME_SZ
+
                 if len(data):
+                    # process the 1 or more messages we just received
+                    num_frames = len(data) // self.FRAME_SZ
                     c = 0
                     for _ in range(num_frames):
                         self.recv_buffer.put(self._bytes_to_message(data[c:c+self.FRAME_SZ]))
@@ -124,19 +126,24 @@ class TCPBus(can.BusABC):
         """background thread to send messages when they are put in the queue"""
         with self._conn as s:
             while self._shutdown_flag.empty():
-                if self.send_buffer.empty():
-                    #TODO: use timeout on queue to avoid this? easy for one message, but could be multiple messages
-                    sleep(0.001) 
-                else:
-                    data = bytearray()
-                    while not self.send_buffer.empty():
-                        msg = self.send_buffer.get()
-                        data += self._msg_to_bytes(msg)
+                # if self.send_buffer.empty():
+                #     #TODO: use timeout on queue to avoid this? easy for one message, but could be multiple messages
+                #     sleep(0.001)
+
+                try:
+                    msg = self.send_buffer.get(timeout=0.02)
+                    data = self._msg_to_bytes(msg)
+                    while not self.send_buffer.empty(): #we know there's one message, might be more.
+                        data += self._msg_to_bytes(self.send_buffer.get())
                     try:
                         s.sendall(data)
                     except OSError:
                         # socket's been closed.
                         self._stop_threads()
                         break
+                except QueueEmpty:
+                    pass #NBD, just means nothing to send.
+
+
 
         
