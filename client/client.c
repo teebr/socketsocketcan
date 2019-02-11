@@ -82,11 +82,15 @@ void print_frame(timestamped_frame* tf);
 /* GLOBALS */
 pthread_mutex_t read_mutex = PTHREAD_MUTEX_INITIALIZER;
 sig_atomic_t poll = true; // for "infinite loops" in threads.
-bool ready_to_send = true; // only access inside of mutex
+bool tcp_ready_to_send = true; // only access inside of mutex 
 size_t socketcan_bytes_available;// only access inside of mutex
+bool tcp_have_copied = false;
 
 char read_buf_can[BUF_SZ]; // where serialized CAN frames are dumped
 char read_buf_tcp[BUF_SZ]; // where serialized CAN frames are copied to and sent to the server
+
+uint32_t recv_bytes = 0;
+uint32_t tcp_msg_count = 0;
 
 /* FUNCTIONS */
 void handle_signal(int signal) {
@@ -98,6 +102,7 @@ void handle_signal(int signal) {
 }
 void error(char* msg)
 {
+    printf("%d messages received.\n",recv_bytes / 21);
     perror(msg);
     exit(0);
 }
@@ -192,7 +197,7 @@ void* read_poll_can(void* args)
     {   
         if(count > (BUF_SZ-frame_sz))
         {
-            //full buffer, drop data and start over. TODO: ring buffer
+            //full buffer, drop data and start over. TODO: ring buffer, print/ debug
             bufpnt = read_buf_can;
             count = 0;
         }
@@ -216,15 +221,16 @@ void* read_poll_can(void* args)
         printf("message read\n");
 #endif
         pthread_mutex_lock(&read_mutex);
-        if (ready_to_send) // other thread has said it is able to write to TCP socket
+        if (tcp_ready_to_send && (!tcp_have_copied)) // other thread has said it is able to write to TCP socket
         {
             socketcan_bytes_available = count;
             memcpy(read_buf_tcp,read_buf_can,count);
+            tcp_have_copied = true;
+            bufpnt = read_buf_can; //start filling up buffer again
+            count = 0;
 #if DEBUG
             printf("%d bytes copied to TCP buffer.\n",count);
 #endif
-            bufpnt = read_buf_can;
-            count = 0;
         }
         pthread_mutex_unlock(&read_mutex);
     }
@@ -234,33 +240,40 @@ void* read_poll_tcp(void* args)
 {
     int tcp_socket = (int)(args);
     struct timespec sleep_time = {0,500000};
+    size_t cpy_socketcan_bytes_available;
     while(poll)
     {
-        size_t cpy_socketcan_bytes_available = 0; // we should only access the original inside a mutex.
+        cpy_socketcan_bytes_available = 0; // we should only access the original inside a mutex.
         pthread_mutex_lock(&read_mutex);
         if(socketcan_bytes_available > 0)
         {
             cpy_socketcan_bytes_available = socketcan_bytes_available;
-            ready_to_send = false; // tell the other loop we don't need data right now.
+            tcp_ready_to_send = false; // tell the other loop we don't need data right now.
+            tcp_have_copied = false;
             socketcan_bytes_available= 0; //otherwise next iteration of this loop, we'll try and send again even if there's no new data...
         }
         pthread_mutex_unlock(&read_mutex);
         
-        // don't need to perform the write inside mutex;
+        // don't want to perform the write inside mutex;
         if (cpy_socketcan_bytes_available > 0)
         {
 #if DEBUG
             printf("ready to send %d bytes\n",cpy_socketcan_bytes_available);
 #endif
             int n = write(tcp_socket, read_buf_tcp,cpy_socketcan_bytes_available);
+            if (n < cpy_socketcan_bytes_available)
+            {
+                error("failed to sent all bytes over TCP");
+            }
 #if DEBUG
             printf("%d bytes written to TCP\n",n);
             timestamped_frame tf;
             deserialize_frame(read_buf_tcp,&tf); //TODO: more than one frame.
             print_frame(&tf);
-#endif            
+#endif      
+            recv_bytes += n;
             pthread_mutex_lock(&read_mutex);
-            ready_to_send = true;
+            tcp_ready_to_send = true;
             pthread_mutex_unlock(&read_mutex);
         }
         else

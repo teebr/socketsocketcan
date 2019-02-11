@@ -68,17 +68,19 @@ class TCPBus(can.BusABC):
 
     def _msg_to_bytes(self,msg):
         """convert Message object to bytes to be put on TCP socket"""
-        id = msg.arbitration_id.to_bytes(4,"little") #TODO: masks
+        arb_id = msg.arbitration_id.to_bytes(4,"little") #TODO: masks
         dlc = msg.dlc.to_bytes(1,"little")
         data = msg.data + bytes(8-msg.dlc)
-        return id+dlc+data
+        return arb_id+dlc+data
 
     def _bytes_to_message(self,b):
         """convert raw TCP bytes to can.Message object"""
         ts = int.from_bytes(b[:4],"little") + int.from_bytes(b[4:8],"little")/1e6
-        dlc = b[12]
         can_id = int.from_bytes(b[8:12],"little")
-
+        dlc = b[12]
+        if dlc > 8:
+            print("dlc is ",dlc,"bytes? check socket buffering",ts) #TODO :fix!!!
+            dlc = 8
         #decompose ID
         is_extended = bool(can_id & self.CAN_EFF_FLAG) #CAN_EFF_FLAG
         if is_extended:
@@ -101,7 +103,7 @@ class TCPBus(can.BusABC):
         with self._conn as conn:
             while self._shutdown_flag.empty():
                 try:
-                    data = conn.recv(8192)
+                    data = conn.recv(65536)
                 except socket.timeout:
                     #no data, just try again.
                     continue
