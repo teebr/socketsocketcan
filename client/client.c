@@ -84,7 +84,8 @@ pthread_mutex_t read_mutex = PTHREAD_MUTEX_INITIALIZER;
 sig_atomic_t poll = true; // for "infinite loops" in threads.
 bool tcp_ready_to_send = true; // only access inside of mutex 
 size_t socketcan_bytes_available;// only access inside of mutex
-bool tcp_have_copied = false;
+
+pthread_cond_t tcp_send_copied;
 
 char read_buf_can[BUF_SZ]; // where serialized CAN frames are dumped
 char read_buf_tcp[BUF_SZ]; // where serialized CAN frames are copied to and sent to the server
@@ -221,11 +222,17 @@ void* read_poll_can(void* args)
         printf("message read\n");
 #endif
         pthread_mutex_lock(&read_mutex);
-        if (tcp_ready_to_send && (!tcp_have_copied)) // other thread has said it is able to write to TCP socket
+        if (tcp_ready_to_send) // other thread has said it is able to write to TCP socket
         {
             socketcan_bytes_available = count;
             memcpy(read_buf_tcp,read_buf_can,count);
-            tcp_have_copied = true;
+
+            const int signal_rv = pthread_cond_signal(&tcp_send_copied);
+            if (signal_rv < 0)
+            {
+                error("could not signal to other thread.\n");
+            }
+            tcp_ready_to_send = false;
             bufpnt = read_buf_can; //start filling up buffer again
             count = 0;
 #if DEBUG
@@ -239,48 +246,43 @@ void* read_poll_can(void* args)
 void* read_poll_tcp(void* args)
 {
     int tcp_socket = (int)(args);
-    struct timespec sleep_time = {0,500000};
     size_t cpy_socketcan_bytes_available;
+    int wait_rv;
     while(poll)
     {
-        cpy_socketcan_bytes_available = 0; // we should only access the original inside a mutex.
         pthread_mutex_lock(&read_mutex);
-        if(socketcan_bytes_available > 0)
+        tcp_ready_to_send = true;
+        while (!socketcan_bytes_available)
         {
-            cpy_socketcan_bytes_available = socketcan_bytes_available;
-            tcp_ready_to_send = false; // tell the other loop we don't need data right now.
-            tcp_have_copied = false;
-            socketcan_bytes_available= 0; //otherwise next iteration of this loop, we'll try and send again even if there's no new data...
+            wait_rv = pthread_cond_wait(&tcp_send_copied, &read_mutex);
         }
+        if (wait_rv < 0)
+        {
+            error("could not resume TCP send thread.\n");
+        }
+        cpy_socketcan_bytes_available = socketcan_bytes_available; // we should only access the original inside a mutex.
+        socketcan_bytes_available = 0;
         pthread_mutex_unlock(&read_mutex);
         
         // don't want to perform the write inside mutex;
-        if (cpy_socketcan_bytes_available > 0)
-        {
 #if DEBUG
-            printf("ready to send %d bytes\n",cpy_socketcan_bytes_available);
+        printf("ready to send %d bytes\n",cpy_socketcan_bytes_available);
 #endif
-            int n = write(tcp_socket, read_buf_tcp,cpy_socketcan_bytes_available);
-            if (n < cpy_socketcan_bytes_available)
-            {
-                error("failed to sent all bytes over TCP");
-            }
-#if DEBUG
-            printf("%d bytes written to TCP\n",n);
-            timestamped_frame tf;
-            deserialize_frame(read_buf_tcp,&tf); //TODO: more than one frame.
-            print_frame(&tf);
-#endif      
-            recv_bytes += n;
-            pthread_mutex_lock(&read_mutex);
-            tcp_ready_to_send = true;
-            pthread_mutex_unlock(&read_mutex);
-        }
-        else
+        int n = write(tcp_socket, read_buf_tcp,cpy_socketcan_bytes_available);
+        if (n < cpy_socketcan_bytes_available)
         {
-            //avoid hogging the mutex
-            nanosleep(&sleep_time,NULL);
+            error("failed to sent all bytes over TCP");
         }
+#if DEBUG
+        printf("%d bytes written to TCP\n",n);
+        timestamped_frame tf;
+        deserialize_frame(read_buf_tcp,&tf); //TODO: more than one frame.
+        print_frame(&tf);
+#endif      
+        recv_bytes += n;
+        // pthread_mutex_lock(&read_mutex);
+        // tcp_ready_to_send = true;
+        // pthread_mutex_unlock(&read_mutex);
     }
 }
 
@@ -386,6 +388,7 @@ int main(int argc, char* argv[])
         printf("\n mutex init has failed\n"); 
         return 1; 
     }
+
     can_socket = open_can_socket(can_port);
     tcp_socket = create_tcp_socket(hostname, port);
 
