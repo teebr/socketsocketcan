@@ -6,7 +6,7 @@ import can
 from time import sleep
 
 class TCPBus(can.BusABC):
-    FRAME_SZ = 21
+    RECV_FRAME_SZ = 21
     CAN_EFF_FLAG = 0x80000000
     CAN_RTR_FLAG = 0x40000000
     CAN_ERR_FLAG = 0x20000000
@@ -77,10 +77,8 @@ class TCPBus(can.BusABC):
         """convert raw TCP bytes to can.Message object"""
         ts = int.from_bytes(b[:4],"little") + int.from_bytes(b[4:8],"little")/1e6
         can_id = int.from_bytes(b[8:12],"little")
-        dlc = b[12]
-        if dlc > 8:
-            print("dlc is ",dlc,"bytes? check socket buffering",ts) #TODO :fix!!!
-            dlc = 8
+        dlc = b[12] #TODO: sanity check on these values in case of corrupted messages.
+
         #decompose ID
         is_extended = bool(can_id & self.CAN_EFF_FLAG) #CAN_EFF_FLAG
         if is_extended:
@@ -100,10 +98,11 @@ class TCPBus(can.BusABC):
 
     def _poll_socket(self):
         """background thread to check for new CAN messages on the TCP socket"""
+        part_formed_message = bytearray() # TCP transfer might off part way through sending a message
         with self._conn as conn:
             while self._shutdown_flag.empty():
                 try:
-                    data = conn.recv(65536)
+                    data = conn.recv(self.RECV_FRAME_SZ * 20)
                 except socket.timeout:
                     #no data, just try again.
                     continue
@@ -114,11 +113,24 @@ class TCPBus(can.BusABC):
 
                 if len(data):
                     # process the 1 or more messages we just received
-                    num_frames = len(data) // self.FRAME_SZ
+
+                    if len(part_formed_message):
+                        data = part_formed_message + data #add on the previous remainder
+                    
+                    #check how many whole and incomplete messages we got through.
+                    num_incomplete_bytes = len(data) % self.RECV_FRAME_SZ
+                    num_frames = len(data) // self.RECV_FRAME_SZ
+
+                    #to pre-pend next time:
+                    if num_incomplete_bytes:
+                        part_formed_message = data[-num_incomplete_bytes:]
+                    else:
+                        part_formed_message = bytearray()
+
                     c = 0
                     for _ in range(num_frames):
-                        self.recv_buffer.put(self._bytes_to_message(data[c:c+self.FRAME_SZ]))
-                        c += self.FRAME_SZ
+                        self.recv_buffer.put(self._bytes_to_message(data[c:c+self.RECV_FRAME_SZ]))
+                        c += self.RECV_FRAME_SZ
                 else:
                     #socket's been closed at the other end.
                     self._stop_threads()
@@ -128,10 +140,6 @@ class TCPBus(can.BusABC):
         """background thread to send messages when they are put in the queue"""
         with self._conn as s:
             while self._shutdown_flag.empty():
-                # if self.send_buffer.empty():
-                #     #TODO: use timeout on queue to avoid this? easy for one message, but could be multiple messages
-                #     sleep(0.001)
-
                 try:
                     msg = self.send_buffer.get(timeout=0.02)
                     data = self._msg_to_bytes(msg)

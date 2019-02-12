@@ -5,7 +5,7 @@ I've found that for a busy bus (> 1000 messages/ second), my Raspberry Pi was dr
 
 This package lets you run `python-can` on a more powerful machine, by setting up a TCP connection to the Linux device. A small C client runs on the Linux device to send/ receive CAN messages (with timestamp). This is perfect for listening to a bus and sending occasional messages. I haven't tested this\* with anything that demands high-frequency periodic sending of messages, but using the CAN broadcast manager will probably be better than using this directly.
 
-\* *I haven't tested this much at all. Sorry.*
+\* *I haven't tested this much at all. Sorry. I did have 3 terminals running `cangen` at a 1ms interval for 10 minutes, and didn't have any issues (it was identical to `candump` except where `candump` locked up and dropped a few hundred messages).*
 
 # CAN Set-up
 Enable `vcan` or `can0` (or whichever) on the Linux device:

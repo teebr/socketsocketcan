@@ -85,13 +85,10 @@ sig_atomic_t poll = true; // for "infinite loops" in threads.
 bool tcp_ready_to_send = true; // only access inside of mutex 
 size_t socketcan_bytes_available;// only access inside of mutex
 
-pthread_cond_t tcp_send_copied;
+pthread_cond_t tcp_send_copied; //signal to enable thread.
 
 char read_buf_can[BUF_SZ]; // where serialized CAN frames are dumped
 char read_buf_tcp[BUF_SZ]; // where serialized CAN frames are copied to and sent to the server
-
-uint32_t recv_bytes = 0;
-uint32_t tcp_msg_count = 0;
 
 /* FUNCTIONS */
 void handle_signal(int signal) {
@@ -103,7 +100,6 @@ void handle_signal(int signal) {
 }
 void error(char* msg)
 {
-    printf("%d messages received.\n",recv_bytes / 21);
     perror(msg);
     exit(0);
 }
@@ -226,13 +222,13 @@ void* read_poll_can(void* args)
         {
             socketcan_bytes_available = count;
             memcpy(read_buf_tcp,read_buf_can,count);
-
+            tcp_ready_to_send = false;
             const int signal_rv = pthread_cond_signal(&tcp_send_copied);
             if (signal_rv < 0)
             {
                 error("could not signal to other thread.\n");
             }
-            tcp_ready_to_send = false;
+
             bufpnt = read_buf_can; //start filling up buffer again
             count = 0;
 #if DEBUG
@@ -279,10 +275,6 @@ void* read_poll_tcp(void* args)
         deserialize_frame(read_buf_tcp,&tf); //TODO: more than one frame.
         print_frame(&tf);
 #endif      
-        recv_bytes += n;
-        // pthread_mutex_lock(&read_mutex);
-        // tcp_ready_to_send = true;
-        // pthread_mutex_unlock(&read_mutex);
     }
 }
 
