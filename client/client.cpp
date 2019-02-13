@@ -2,6 +2,8 @@
 TODO: error frames aren't being looped back
 */
 
+#include "client.h"
+
 #include <stdio.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -20,22 +22,32 @@ TODO: error frames aren't being looped back
 #include <sys/time.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <pthread.h> 
+#include <pthread.h>
 
 #define HOSTNAME_LEN 128
 #define BUF_SZ 100000
 
 /* CONFIG PARAMETERS */
+#ifndef DEBUG
 #define DEBUG 0
+#endif
+
+#ifndef RECV_OWN_MSGS
 #define RECV_OWN_MSGS 1// if 1, we well receive messages we sent. useful for logging.
-const int LOOPBACK = RECV_OWN_MSGS; 
+#endif
+
+const int LOOPBACK = RECV_OWN_MSGS;
+
+#ifndef WAIT_FOR_TCP_CONNECTION
+#define WAIT_FOR_TCP_CONNECTION 0
+#endif
 
 /* DEFINITIONS */
 typedef struct
 {
     time_t tv_sec;
     suseconds_t tv_usec;
-    canid_t id; 
+    canid_t id;
     uint8_t dlc;//be careful, when serializing, struct seems to pad this to 4 bytes
     uint8_t data[CAN_MAX_DLEN];
 } timestamped_frame;
@@ -52,10 +64,10 @@ typedef struct
 void handle_signal(int signal);
 
 // print error information and exit (use before therads set-up)
-void error(char* msg);
+void error(const char* msg);
 
 // open up a TCP connection to the server
-int create_tcp_socket(char* hostname, int port);
+int create_tcp_socket(const char* hostname, int port);
 
 // open a CAN socket
 int open_can_socket(const char *port);
@@ -82,7 +94,7 @@ void print_frame(timestamped_frame* tf);
 /* GLOBALS */
 pthread_mutex_t read_mutex = PTHREAD_MUTEX_INITIALIZER;
 sig_atomic_t poll = true; // for "infinite loops" in threads.
-bool tcp_ready_to_send = true; // only access inside of mutex 
+bool tcp_ready_to_send = true; // only access inside of mutex
 size_t socketcan_bytes_available;// only access inside of mutex
 
 pthread_cond_t tcp_send_copied; //signal to enable thread.
@@ -98,13 +110,13 @@ void handle_signal(int signal) {
     }
     //TODO: else what?
 }
-void error(char* msg)
+void error(const char* msg)
 {
     perror(msg);
     exit(0);
 }
 
-int create_tcp_socket(char* hostname, int port)
+int create_tcp_socket(const char* hostname, int port)
 {
     struct sockaddr_in serv_addr;
     struct hostent *server;
@@ -129,7 +141,11 @@ int create_tcp_socket(char* hostname, int port)
     serv_addr.sin_port = htons(port);
     if (connect(fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
+#if WAIT_FOR_TCP_CONNECTION
+        return -1;
+#else
         error("ERROR connecting");
+#endif
     }
 
     return fd;
@@ -191,7 +207,7 @@ void* read_poll_can(void* args)
     const size_t frame_sz = sizeof(tf);
 
     while(poll)
-    {   
+    {
         if(count > (BUF_SZ-frame_sz))
         {
             //full buffer, drop data and start over. TODO: ring buffer, print/ debug
@@ -259,7 +275,7 @@ void* read_poll_tcp(void* args)
         cpy_socketcan_bytes_available = socketcan_bytes_available; // we should only access the original inside a mutex.
         socketcan_bytes_available = 0;
         pthread_mutex_unlock(&read_mutex);
-        
+
         // don't want to perform the write inside mutex;
 #if DEBUG
         printf("ready to send %d bytes\n",cpy_socketcan_bytes_available);
@@ -274,7 +290,7 @@ void* read_poll_tcp(void* args)
         timestamped_frame tf;
         deserialize_frame(read_buf_tcp,&tf); //TODO: more than one frame.
         print_frame(&tf);
-#endif      
+#endif
     }
 }
 
@@ -283,7 +299,7 @@ void* write_poll(void* args)
     // CAN write should be quick enough to do in this loop...
     can_write_sockets* socks = (can_write_sockets*)args;
     struct can_frame frame;
-    
+
     char write_buf[BUF_SZ];
     char* bufpnt = write_buf;
     const size_t frame_sz = 13; // 4 id + 1 dlc + 8 bytes
@@ -328,7 +344,7 @@ void* write_poll(void* args)
 }
 
 void deserialize_frame(char* ptr,timestamped_frame* tf)
-{    
+{
     // tf = (timestamped_frame*)ptr; // doesn't work, struct does some padding. manually populate fields?
     size_t count = 0;
     memcpy(&(tf -> tv_sec),ptr,sizeof(time_t));
@@ -356,39 +372,44 @@ void print_frame(timestamped_frame* tf)
     printf("\n");
 }
 
-int main(int argc, char* argv[])
+int run(const char *can_port, const char *hostname, int port)
 {
-    int port, tcp_socket, can_socket;
-    char hostname[HOSTNAME_LEN];
-    char can_port[HOSTNAME_LEN];
-
     pthread_t read_can_thread, read_tcp_thread, write_thread;
-
-    // arg parsing
-    if (argc < 4)
-    {
-        fprintf(stderr, "usage %s can-name hostname port\n", argv[0]);
-        exit(0);
-    }
-    strncpy(can_port, argv[1], HOSTNAME_LEN);
-    strncpy(hostname, argv[2], HOSTNAME_LEN);
-    port = atoi(argv[3]);
+    int tcp_socket, can_socket;
 
     // initialising stuff
-    if (pthread_mutex_init(&read_mutex, NULL) != 0) 
-    { 
-        printf("\n mutex init has failed\n"); 
-        return 1; 
+    if (pthread_mutex_init(&read_mutex, NULL) != 0)
+    {
+        printf("\n mutex init has failed\n");
+        return 1;
     }
 
     can_socket = open_can_socket(can_port);
+
+#if WAIT_FOR_TCP_CONNECTION
+#if DEBUG
+    printf("Waiting for TCP connection");
+#endif
+    do {
+#if DEBUG
+        printf(".");
+        fflush(stdout);
+#endif
+        tcp_socket = create_tcp_socket(hostname, port);
+        sleep(1);
+    } while (tcp_socket == -1);
+#if DEBUG
+    printf("\nConnection established\n");
+#endif
+#else
     tcp_socket = create_tcp_socket(hostname, port);
+#endif
 
     can_write_sockets write_args = {tcp_socket, can_socket};
     if(pthread_create(&read_can_thread, NULL, read_poll_can, (void*)can_socket) < 0)
     {
         error("unable to create thread");
-    } 
+    }
     if(pthread_create(&read_tcp_thread, NULL, read_poll_tcp, (void*)tcp_socket) < 0)
     {
         error("unable to create thread");
@@ -398,8 +419,30 @@ int main(int argc, char* argv[])
     {
         error("unable to create thread");
     }
+
     pthread_join(read_can_thread,NULL);
     pthread_join(read_tcp_thread,NULL);
     pthread_join(write_thread,NULL);
+
     return 0;
+}
+
+int main(int argc, char* argv[])
+{
+    int port;
+    char hostname[HOSTNAME_LEN];
+    char can_port[HOSTNAME_LEN];
+
+    // arg parsing
+    if (argc < 4)
+    {
+        fprintf(stderr, "usage %s can-name hostname port\n", argv[0]);
+        exit(0);
+    }
+
+    strncpy(can_port, argv[1], HOSTNAME_LEN);
+    strncpy(hostname, argv[2], HOSTNAME_LEN);
+    port = atoi(argv[3]);
+
+    return run(can_port, hostname, port);
 }

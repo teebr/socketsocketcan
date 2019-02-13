@@ -118,3 +118,6 @@ dmypy.json
 *.log
 
 .notes.md
+
+# PyCharm
+.idea/

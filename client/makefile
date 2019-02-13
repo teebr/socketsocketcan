@@ -1,12 +1,12 @@
-CC=gcc
-CFLAGS = -std=gnu99
+CXX=g++
+CXXFLAGS = -std=c++11
 LFLAGS = -lpthread
 TARGET = client
 
 all: $(TARGET)
 
-$(TARGET): $(TARGET).c
-	$(CC) -o $(TARGET) $(TARGET).c $(CFLAGS) $(LFLAGS)
+$(TARGET): $(TARGET).cpp
+	$(CXX) -o $(TARGET) $(TARGET).cpp $(CXXFLAGS) $(LFLAGS)
 
 clean:
 	$(RM) *.o *~ $(TARGET)
