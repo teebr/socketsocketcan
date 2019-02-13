@@ -2,8 +2,6 @@
 TODO: error frames aren't being looped back
 */
 
-#include "client.h"
-
 #include <stdio.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -372,7 +370,7 @@ void print_frame(timestamped_frame* tf)
     printf("\n");
 }
 
-int run(const char *can_port, const char *hostname, int port)
+int tcpclient(const char *can_port, const char *hostname, int port)
 {
     pthread_t read_can_thread, read_tcp_thread, write_thread;
     int tcp_socket, can_socket;
@@ -444,5 +442,5 @@ int main(int argc, char* argv[])
     strncpy(hostname, argv[2], HOSTNAME_LEN);
     port = atoi(argv[3]);
 
-    return run(can_port, hostname, port);
+    return tcpclient(can_port, hostname, port);
 }
