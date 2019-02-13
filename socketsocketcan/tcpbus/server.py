@@ -34,12 +34,15 @@ class TCPBus(can.BusABC):
 
         self._tcp_writer = Thread(target=self._poll_send)
         self._tcp_writer.start()
-    
-    def _recv_internal(self,timeout=None):
-        #TODO: filtering shit
-        return (self.recv_buffer.get(timeout=timeout), True)
 
-    def send(self,msg):
+    def _recv_internal(self, timeout=None):
+        # TODO: filtering shit
+        try:
+            return self.recv_buffer.get(timeout=timeout), False
+        except QueueEmpty:
+            return None, False
+
+    def send(self, msg):
         if msg.is_extended_id:
             msg.arbitration_id |= self.CAN_EFF_FLAG
         if msg.is_remote_frame:
