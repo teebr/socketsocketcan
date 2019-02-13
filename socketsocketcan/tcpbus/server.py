@@ -13,6 +13,7 @@ class TCPBus(can.BusABC):
     CAN_ERR_FLAG = 0x20000000
 
     def __init__(self, port, hostname="", can_filters=None, **kwargs):
+        self.channel_info = "tcpbus port: {} hostname: {}".format(port, hostname)
         super(TCPBus, self).__init__('tcpbus', can_filters=can_filters, **kwargs)
 
         self.hostname = hostname #TODO: check validity. ping?
