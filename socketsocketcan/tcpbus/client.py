@@ -1,18 +1,22 @@
 import multiprocessing
 
+from can.interfaces.socketcan.constants import CAN_EFF_FLAG
+from can.interfaces.socketcan.utils import pack_filters
 # noinspection PyUnresolvedReferences
 from tcpclient import tcpclient
 
 
 class TCPClient(object):
 
-    def __init__(self, can_port, hostname, port):
+    def __init__(self, can_port, hostname, port, can_filters=None):
         self.can_port = can_port
         self.hostname = hostname
         self.port = port
+        self.can_filters = can_filters
 
         # Run the client in a separate process, so it does not block the main thread
-        self._tcp_client_process = multiprocessing.Process(target=self._tcp_client, args=(can_port, hostname, port))
+        self._tcp_client_process = multiprocessing.Process(target=self._tcp_client, args=(can_port, hostname, port,
+                                                                                          can_filters))
         self._tcp_client_process.daemon = False
         self._tcp_client_process.start()
 
@@ -22,5 +26,20 @@ class TCPClient(object):
             self._tcp_client_process.terminate()
 
     @staticmethod
-    def _tcp_client(can_port, hostname, port):
-        tcpclient(can_port, hostname, port)
+    def _tcp_client(can_port, hostname, port, can_filters):
+        if can_filters is None:
+            can_filters = [{'can_id': 0, 'can_mask': 0}]
+
+        # filter_data = []
+        # for can_filter in can_filters:
+        #     can_id = can_filter['can_id']
+        #     can_mask = can_filter['can_mask']
+        #     if 'extended' in can_filter:
+        #         # Match on either 11-bit OR 29-bit messages instead of both
+        #         can_mask |= CAN_EFF_FLAG
+        #         if can_filter['extended']:
+        #             can_id |= CAN_EFF_FLAG
+        #     filter_data.append(can_id)
+        #     filter_data.append(can_mask)
+
+        tcpclient(can_port, hostname, port, can_filters)

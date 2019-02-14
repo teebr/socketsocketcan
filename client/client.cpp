@@ -68,7 +68,7 @@ void error(const char* msg);
 int create_tcp_socket(const char* hostname, int port);
 
 // open a CAN socket
-int open_can_socket(const char *port);
+int open_can_socket(const char *port, const struct can_filter *filter, int numfilter);
 
 // read a single CAN frame and add timestamp
 // int read_frame(int soc,timestamped_frame* tf);
@@ -149,7 +149,7 @@ int create_tcp_socket(const char* hostname, int port)
     return fd;
 }
 
-int open_can_socket(const char *port)
+int open_can_socket(const char *port, const struct can_filter *filter, int numfilter)
 {
     struct ifreq ifr;
     struct sockaddr_can addr;
@@ -163,8 +163,17 @@ int open_can_socket(const char *port)
     }
 
     // configure socket
-    setsockopt(soc, SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS,
-               &LOOPBACK, sizeof(LOOPBACK));
+    setsockopt(soc, SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS, &LOOPBACK, sizeof(LOOPBACK));
+
+    const int ERR_MASK = CAN_ERR_MASK; // Enable error frames
+    setsockopt(soc, SOL_CAN_RAW, CAN_RAW_ERR_FILTER, &ERR_MASK, sizeof(ERR_MASK));
+
+    // Set filter and mask
+    if (numfilter > 0)
+    {
+        setsockopt(soc, SOL_CAN_RAW, CAN_RAW_FILTER, filter, numfilter * sizeof(struct can_filter));
+    }
+
     addr.can_family = AF_CAN;
     strcpy(ifr.ifr_name, port);
     if (ioctl(soc, SIOCGIFINDEX, &ifr) < 0)
@@ -251,6 +260,8 @@ void* read_poll_can(void* args)
         }
         pthread_mutex_unlock(&read_mutex);
     }
+
+    pthread_exit(NULL);
 }
 
 void* read_poll_tcp(void* args)
@@ -290,6 +301,8 @@ void* read_poll_tcp(void* args)
         print_frame(&tf);
 #endif
     }
+
+    pthread_exit(NULL);
 }
 
 void* write_poll(void* args)
@@ -339,6 +352,8 @@ void* write_poll(void* args)
         }
         bufpnt = write_buf; //reset.
     }
+
+    pthread_exit(NULL);
 }
 
 void deserialize_frame(char* ptr,timestamped_frame* tf)
@@ -370,7 +385,7 @@ void print_frame(timestamped_frame* tf)
     printf("\n");
 }
 
-int tcpclient(const char *can_port, const char *hostname, int port)
+int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter)
 {
     pthread_t read_can_thread, read_tcp_thread, write_thread;
     int tcp_socket, can_socket;
@@ -382,7 +397,7 @@ int tcpclient(const char *can_port, const char *hostname, int port)
         return 1;
     }
 
-    can_socket = open_can_socket(can_port);
+    can_socket = open_can_socket(can_port, filter, numfilter);
 
 #if WAIT_FOR_TCP_CONNECTION
 #if DEBUG
@@ -442,5 +457,5 @@ int main(int argc, char* argv[])
     strncpy(hostname, argv[2], HOSTNAME_LEN);
     port = atoi(argv[3]);
 
-    return tcpclient(can_port, hostname, port);
+    return tcpclient(can_port, hostname, port, NULL, 0);
 }
