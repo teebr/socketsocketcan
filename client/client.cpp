@@ -41,12 +41,12 @@ const int LOOPBACK = RECV_OWN_MSGS;
 #endif
 
 /* DEFINITIONS */
-typedef struct
+typedef struct __attribute__((packed, aligned(1)))
 {
     time_t tv_sec;
     suseconds_t tv_usec;
     canid_t id;
-    uint8_t dlc;//be careful, when serializing, struct seems to pad this to 4 bytes
+    uint8_t dlc;
     uint8_t data[CAN_MAX_DLEN];
 } timestamped_frame;
 
@@ -168,10 +168,16 @@ int open_can_socket(const char *port, const struct can_filter *filter, int numfi
     const int ERR_MASK = CAN_ERR_MASK; // Enable error frames
     setsockopt(soc, SOL_CAN_RAW, CAN_RAW_ERR_FILTER, &ERR_MASK, sizeof(ERR_MASK));
 
-    // Set filter and mask
     if (numfilter > 0)
     {
+        // Set filter and mask
         setsockopt(soc, SOL_CAN_RAW, CAN_RAW_FILTER, filter, numfilter * sizeof(struct can_filter));
+    }
+    else
+    {
+        // Receive everything
+        struct can_filter filter = { .can_id = 0, .can_mask = 0 };
+        setsockopt(soc, SOL_CAN_RAW, CAN_RAW_FILTER, &filter, sizeof(struct can_filter));
     }
 
     addr.can_family = AF_CAN;
