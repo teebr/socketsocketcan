@@ -7,7 +7,7 @@ from tcpclient import tcpclient
 
 class TCPClient(object):
 
-    def __init__(self, can_port, hostname, port, can_filters=None):
+    def __init__(self, can_port, hostname, port, can_filters=None, use_unordered_map=False):
         self.can_port = can_port
         self.hostname = hostname
         self.port = port
@@ -15,7 +15,7 @@ class TCPClient(object):
 
         # Run the client in a separate process, so it does not block the main thread
         self._tcp_client_process = multiprocessing.Process(target=self._tcp_client, args=(can_port, hostname, port,
-                                                                                          can_filters))
+                                                                                          can_filters, use_unordered_map))
         self._tcp_client_process.daemon = False
         self._tcp_client_process.start()
 
@@ -25,7 +25,7 @@ class TCPClient(object):
             self._tcp_client_process.terminate()
 
     @staticmethod
-    def _tcp_client(can_port, hostname, port, can_filters):
+    def _tcp_client(can_port, hostname, port, can_filters, use_unordered_map):
         if can_filters is None:
             can_filters = [{'can_id': 0, 'can_mask': 0}]
 
@@ -41,4 +41,4 @@ class TCPClient(object):
                     can_id |= CAN_EFF_FLAG
             filter_data.append({'can_id': can_id, 'can_mask': can_mask})
 
-        tcpclient(can_port, hostname, port, filter_data)
+        tcpclient(can_port, hostname, port, filter_data, use_unordered_map)

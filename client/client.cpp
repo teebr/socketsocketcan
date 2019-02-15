@@ -21,6 +21,7 @@ TODO: error frames aren't being looped back
 #include <stdint.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <unordered_map>
 
 #define HOSTNAME_LEN 128
 #define BUF_SZ 100000
@@ -49,6 +50,12 @@ typedef struct __attribute__((packed, aligned(1)))
     uint8_t dlc;
     uint8_t data[CAN_MAX_DLEN];
 } timestamped_frame;
+
+typedef struct
+{
+    int can_sock;
+    bool use_unordered_map;
+} can_read_args; // used to supply multiple thread args.
 
 typedef struct
 {
@@ -84,10 +91,10 @@ void* read_poll_tcp(void *args);
 void* write_poll(void *args);
 
 // convert bytes back to timestamped_can
-void deserialize_frame(char* ptr,timestamped_frame* tf);
+void deserialize_frame(const char* ptr, timestamped_frame* tf);
 
 // print CAN frame into to stdout (for debug)
-void print_frame(timestamped_frame* tf);
+void print_frame(const timestamped_frame* tf);
 
 /* GLOBALS */
 pthread_mutex_t read_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -210,7 +217,10 @@ int read_frame(int soc,struct can_frame* frame,struct timeval* tv)
 
 void* read_poll_can(void* args)
 {
-    int fd = (int)args;
+    can_read_args* read_args = (can_read_args*)args;
+    int fd = read_args->can_sock;
+    bool use_unordered_map = read_args->use_unordered_map;
+
     timestamped_frame tf;
     struct can_frame frame;
     struct timeval tv;
@@ -219,29 +229,44 @@ void* read_poll_can(void* args)
     char* bufpnt = read_buf_can;
     const size_t frame_sz = sizeof(tf);
 
-    while(poll)
+    std::unordered_map<canid_t, timestamped_frame> hash_map;
+
+    while (poll)
     {
-        if(count > (BUF_SZ-frame_sz))
+        if (count > (BUF_SZ-frame_sz))
         {
             //full buffer, drop data and start over. TODO: ring buffer, print/ debug
             bufpnt = read_buf_can;
             count = 0;
         }
 
-        read_frame(fd,&frame,&tv); //blocking
-        memcpy(bufpnt,(char*)(&tv),sizeof(struct timeval));
-        bufpnt += sizeof(struct timeval);
-        count += sizeof(struct timeval);
-        memcpy(bufpnt,(char*)(&frame.can_id),sizeof(uint32_t));
-        bufpnt += sizeof(uint32_t);
-        count += sizeof(uint32_t);
-        memcpy(bufpnt,&(frame.can_dlc),sizeof(uint8_t));
-        bufpnt += sizeof(uint8_t);
-        count += sizeof(uint8_t);
+        read_frame(fd, &frame, &tv); //blocking
 
-        memcpy(bufpnt,(char*)(&frame.data),sizeof(frame.data));
-        bufpnt += sizeof(frame.data);
-        count += sizeof(frame.data);
+        if (use_unordered_map)
+        {
+            tf.tv_sec = tv.tv_sec;
+            tf.tv_usec = tv.tv_usec;
+            tf.id = frame.can_id;
+            tf.dlc = frame.can_dlc;
+            memcpy(tf.data, frame.data, sizeof(frame.data));
+            hash_map[tf.id] = tf;
+        }
+        else
+        {
+            memcpy(bufpnt,(char*)(&tv),sizeof(struct timeval));
+            bufpnt += sizeof(struct timeval);
+            count += sizeof(struct timeval);
+            memcpy(bufpnt,(char*)(&frame.can_id),sizeof(uint32_t));
+            bufpnt += sizeof(uint32_t);
+            count += sizeof(uint32_t);
+            memcpy(bufpnt,&(frame.can_dlc),sizeof(uint8_t));
+            bufpnt += sizeof(uint8_t);
+            count += sizeof(uint8_t);
+
+            memcpy(bufpnt,(char*)(&frame.data),sizeof(frame.data));
+            bufpnt += sizeof(frame.data);
+            count += sizeof(frame.data);
+        }
 
 #if DEBUG
         printf("message read\n");
@@ -249,20 +274,45 @@ void* read_poll_can(void* args)
         pthread_mutex_lock(&read_mutex);
         if (tcp_ready_to_send) // other thread has said it is able to write to TCP socket
         {
-            socketcan_bytes_available = count;
-            memcpy(read_buf_tcp,read_buf_can,count);
-            tcp_ready_to_send = false;
-            const int signal_rv = pthread_cond_signal(&tcp_send_copied);
-            if (signal_rv < 0)
+            if (use_unordered_map)
             {
-                error("could not signal to other thread.\n");
-            }
+                socketcan_bytes_available = hash_map.size() * sizeof(tf);
+                size_t i = 0;
+                for (const auto &n : hash_map) {
+                    memcpy(read_buf_tcp + i, &n.second, sizeof(tf));
+                    i += sizeof(tf);
+                }
 
-            bufpnt = read_buf_can; //start filling up buffer again
-            count = 0;
+                tcp_ready_to_send = false;
+                const int signal_rv = pthread_cond_signal(&tcp_send_copied);
+                if (signal_rv < 0)
+                {
+                    error("could not signal to other thread.\n");
+                }
+
 #if DEBUG
-            printf("%d bytes copied to TCP buffer.\n",count);
+                printf("%d bytes copied to TCP buffer.\n", hash_map.size());
 #endif
+                hash_map.clear();
+            }
+            else
+            {
+                socketcan_bytes_available = count;
+                memcpy(read_buf_tcp, read_buf_can, count);
+
+                tcp_ready_to_send = false;
+                const int signal_rv = pthread_cond_signal(&tcp_send_copied);
+                if (signal_rv < 0)
+                {
+                    error("could not signal to other thread.\n");
+                }
+
+#if DEBUG
+                printf("%d bytes copied to TCP buffer.\n",count);
+#endif
+                bufpnt = read_buf_can; //start filling up buffer again
+                count = 0;
+            }
         }
         pthread_mutex_unlock(&read_mutex);
     }
@@ -341,7 +391,7 @@ void* write_poll(void* args)
             frame.can_dlc = (uint8_t)(*(bufpnt+4));
             memcpy(frame.data,bufpnt+5,frame.can_dlc);
 #if DEBUG
-            printf("frame %d | ID: %x | DLC: %d | Data:",n,frame.can_id,frame.can_dlc);
+            printf("frame %d | ID: %x | DLC: %u | Data:",n,frame.can_id,frame.can_dlc);
             for (int m = 0;m < frame.can_dlc;m++)
             {
                 printf("%02x ",frame.data[m]);
@@ -362,7 +412,7 @@ void* write_poll(void* args)
     pthread_exit(NULL);
 }
 
-void deserialize_frame(char* ptr,timestamped_frame* tf)
+void deserialize_frame(const char* ptr, timestamped_frame* tf)
 {
     // tf = (timestamped_frame*)ptr; // doesn't work, struct does some padding. manually populate fields?
     size_t count = 0;
@@ -381,9 +431,9 @@ void deserialize_frame(char* ptr,timestamped_frame* tf)
     memcpy(tf ->data,ptr+count,tf -> dlc);
 }
 
-void print_frame(timestamped_frame* tf)
+void print_frame(const timestamped_frame* tf)
 {
-    printf("\t%d.%d: ID %x | DLC %d | Data: ",tf->tv_sec,tf->tv_usec,tf->id,tf->dlc);
+    printf("\t%ld.%ld: ID %x | DLC %u | Data: ",tf->tv_sec,tf->tv_usec,tf->id,tf->dlc);
     for (int n=0;n<tf->dlc;n++)
     {
         printf("%02x ",tf->data[n]);
@@ -391,7 +441,7 @@ void print_frame(timestamped_frame* tf)
     printf("\n");
 }
 
-int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter)
+int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter, bool use_unordered_map)
 {
     pthread_t read_can_thread, read_tcp_thread, write_thread;
     int tcp_socket, can_socket;
@@ -424,8 +474,8 @@ int tcpclient(const char *can_port, const char *hostname, int port, const struct
     tcp_socket = create_tcp_socket(hostname, port);
 #endif
 
-    can_write_sockets write_args = {tcp_socket, can_socket};
-    if(pthread_create(&read_can_thread, NULL, read_poll_can, (void*)can_socket) < 0)
+    can_read_args read_args = { can_socket, use_unordered_map };
+    if(pthread_create(&read_can_thread, NULL, read_poll_can, (void*)&read_args) < 0)
     {
         error("unable to create thread");
     }
@@ -434,6 +484,7 @@ int tcpclient(const char *can_port, const char *hostname, int port, const struct
         error("unable to create thread");
     }
 
+    can_write_sockets write_args = { tcp_socket, can_socket };
     if(pthread_create(&write_thread, NULL, write_poll, (void*)(&write_args)) < 0)
     {
         error("unable to create thread");
@@ -463,5 +514,5 @@ int main(int argc, char* argv[])
     strncpy(hostname, argv[2], HOSTNAME_LEN);
     port = atoi(argv[3]);
 
-    return tcpclient(can_port, hostname, port, NULL, 0);
+    return tcpclient(can_port, hostname, port, NULL, 0, false);
 }

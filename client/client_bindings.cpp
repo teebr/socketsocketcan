@@ -5,14 +5,14 @@
 
 namespace py = pybind11;
 
-int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter);
+int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter, bool use_unordered_map);
 
-int tcpclient_wrapper(const char *can_port, const char *hostname, int port, py::list filters) {
+int tcpclient_wrapper(const char *can_port, const char *hostname, int port, py::list filters, bool use_unordered_map) {
     int numfilter = filters.size();
     int retval = -1;
     if (numfilter == 0)
     {
-        retval = tcpclient(can_port, hostname, port, NULL, 0);
+        retval = tcpclient(can_port, hostname, port, NULL, 0, use_unordered_map);
     }
     else
     {
@@ -24,7 +24,7 @@ int tcpclient_wrapper(const char *can_port, const char *hostname, int port, py::
             rfilter[i].can_mask = filter["can_mask"].cast<canid_t>();
             i++;
         }
-        retval = tcpclient(can_port, hostname, port, rfilter, numfilter);
+        retval = tcpclient(can_port, hostname, port, rfilter, numfilter, use_unordered_map);
         free(rfilter);
     }
     return retval;
