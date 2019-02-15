@@ -45,6 +45,10 @@ class TCPBus(can.BusABC):
         except QueueEmpty:
             return None, False
 
+    def clear_recv_buffer(self):
+        with self.recv_buffer.mutex:
+            self.recv_buffer.queue.clear()
+
     def send(self, msg, timeout=None):
         if msg.is_extended_id:
             msg.arbitration_id |= self.CAN_EFF_FLAG
