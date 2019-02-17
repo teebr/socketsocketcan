@@ -9,6 +9,7 @@ TODO: error frames aren't being looped back
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <math.h>
 
 #include <string.h>
 #include <unistd.h>
@@ -56,6 +57,12 @@ typedef struct
     int can_sock;
     bool use_unordered_map;
 } can_read_args; // used to supply multiple thread args.
+
+typedef struct
+{
+    int tcp_sock;
+    int limit_recv_rate_hz;
+} tcp_read_args; // used to supply multiple thread args.
 
 typedef struct
 {
@@ -291,7 +298,7 @@ void* read_poll_can(void* args)
                 }
 
 #if DEBUG
-                printf("%d bytes copied to TCP buffer.\n", hash_map.size());
+                printf("%d bytes copied to TCP buffer.\n", socketcan_bytes_available);
 #endif
                 hash_map.clear();
             }
@@ -322,7 +329,10 @@ void* read_poll_can(void* args)
 
 void* read_poll_tcp(void* args)
 {
-    int tcp_socket = (int)(args);
+    tcp_read_args* read_args = (tcp_read_args*)args;
+    int tcp_socket = read_args->tcp_sock;
+    int limit_recv_rate_hz = read_args->limit_recv_rate_hz;
+
     size_t cpy_socketcan_bytes_available;
     int wait_rv;
     while(poll)
@@ -356,6 +366,15 @@ void* read_poll_tcp(void* args)
         deserialize_frame(read_buf_tcp,&tf); //TODO: more than one frame.
         print_frame(&tf);
 #endif
+
+        if (limit_recv_rate_hz > 0)
+        {
+            struct timespec ts;
+            int milliseconds = (int)roundf(1000.0f / (float)limit_recv_rate_hz);
+            ts.tv_sec = milliseconds / 1000;
+            ts.tv_nsec = (milliseconds % 1000) * 1000000;
+            nanosleep(&ts, NULL);
+        }
     }
 
     pthread_exit(NULL);
@@ -441,7 +460,7 @@ void print_frame(const timestamped_frame* tf)
     printf("\n");
 }
 
-int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter, bool use_unordered_map)
+int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter, bool use_unordered_map, int limit_recv_rate_hz)
 {
     pthread_t read_can_thread, read_tcp_thread, write_thread;
     int tcp_socket, can_socket;
@@ -474,18 +493,20 @@ int tcpclient(const char *can_port, const char *hostname, int port, const struct
     tcp_socket = create_tcp_socket(hostname, port);
 #endif
 
-    can_read_args read_args = { can_socket, use_unordered_map };
-    if(pthread_create(&read_can_thread, NULL, read_poll_can, (void*)&read_args) < 0)
+    can_read_args read_args_can = { can_socket, use_unordered_map };
+    if(pthread_create(&read_can_thread, NULL, read_poll_can, (void*)&read_args_can) < 0)
     {
         error("unable to create thread");
     }
-    if(pthread_create(&read_tcp_thread, NULL, read_poll_tcp, (void*)tcp_socket) < 0)
+
+    tcp_read_args read_args_tcp = { tcp_socket, limit_recv_rate_hz };
+    if(pthread_create(&read_tcp_thread, NULL, read_poll_tcp, (void*)&read_args_tcp) < 0)
     {
         error("unable to create thread");
     }
 
     can_write_sockets write_args = { tcp_socket, can_socket };
-    if(pthread_create(&write_thread, NULL, write_poll, (void*)(&write_args)) < 0)
+    if(pthread_create(&write_thread, NULL, write_poll, (void*)&write_args) < 0)
     {
         error("unable to create thread");
     }
@@ -514,5 +535,5 @@ int main(int argc, char* argv[])
     strncpy(hostname, argv[2], HOSTNAME_LEN);
     port = atoi(argv[3]);
 
-    return tcpclient(can_port, hostname, port, NULL, 0, false);
+    return tcpclient(can_port, hostname, port, NULL, 0, false, -1);
 }
