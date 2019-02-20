@@ -23,6 +23,8 @@ class TCPClient(object):
         self.hostname = hostname
         self.port = port
         self.can_filters = can_filters
+        self.use_unordered_map = use_unordered_map
+        self.limit_recv_rate_hz = limit_recv_rate_hz
 
         # Run the client in a separate process, so it does not block the main thread
         self._tcp_client_process = multiprocessing.Process(target=self._tcp_client, args=(channel, hostname, port,
