@@ -32,10 +32,12 @@ class TCPClient(object):
         self._tcp_client_process.daemon = False
         self._tcp_client_process.start()
 
-    def shutdown(self, timeout=1):
-        self._tcp_client_process.join(timeout)
+    def shutdown(self):
+        # Send SIGTERM to the process and wait for it to finish
         if self._tcp_client_process.is_alive():
             self._tcp_client_process.terminate()
+            self._tcp_client_process.join()
+        return self._tcp_client_process.exitcode
 
     @staticmethod
     def _tcp_client(channel, hostname, port, can_filters, use_unordered_map, limit_recv_rate_hz):
