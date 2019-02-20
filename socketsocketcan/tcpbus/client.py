@@ -29,7 +29,7 @@ class TCPClient(object):
                                                                                           can_filters,
                                                                                           use_unordered_map,
                                                                                           limit_recv_rate_hz))
-        self._tcp_client_process.daemon = False
+        self._tcp_client_process.daemon = True
         self._tcp_client_process.start()
 
     def shutdown(self):
