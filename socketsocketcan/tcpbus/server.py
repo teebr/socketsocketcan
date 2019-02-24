@@ -4,13 +4,11 @@ from queue import Queue
 from threading import Thread, Event
 
 import can
+from can.interfaces.socketcan.constants import CAN_ERR_FLAG, CAN_RTR_FLAG, CAN_EFF_FLAG
 
 
 class TCPBus(can.BusABC):
     RECV_FRAME_SZ = 21
-    CAN_EFF_FLAG = 0x80000000
-    CAN_RTR_FLAG = 0x40000000
-    CAN_ERR_FLAG = 0x20000000
 
     def __init__(self, port, hostname="", can_filters=None, **kwargs):
         self.channel_info = "tcpbus port: {} hostname: {}".format(port, hostname)
@@ -53,11 +51,11 @@ class TCPBus(can.BusABC):
 
     def send(self, msg, timeout=None):
         if msg.is_extended_id:
-            msg.arbitration_id |= self.CAN_EFF_FLAG
+            msg.arbitration_id |= CAN_EFF_FLAG
         if msg.is_remote_frame:
-            msg.arbitration_id |= self.CAN_RTR_FLAG
+            msg.arbitration_id |= CAN_RTR_FLAG
         if msg.is_error_frame:
-            msg.arbitration_id |= self.CAN_ERR_FLAG
+            msg.arbitration_id |= CAN_ERR_FLAG
         self._send_buffer.put(msg, timeout=timeout)
 
     def _stop_threads(self):
@@ -99,7 +97,7 @@ class TCPBus(can.BusABC):
         dlc = b[12] #TODO: sanity check on these values in case of corrupted messages.
 
         # Decompose ID
-        is_extended = bool(can_id & TCPBus.CAN_EFF_FLAG)
+        is_extended = bool(can_id & CAN_EFF_FLAG)
         if is_extended:
             arb_id = can_id & 0x1FFFFFFF
         else:
@@ -109,8 +107,8 @@ class TCPBus(can.BusABC):
             timestamp = ts,
             arbitration_id = arb_id,
             is_extended_id = is_extended,
-            is_error_frame = bool(can_id & TCPBus.CAN_ERR_FLAG),
-            is_remote_frame = bool(can_id & TCPBus.CAN_RTR_FLAG),
+            is_error_frame = bool(can_id & CAN_ERR_FLAG),
+            is_remote_frame = bool(can_id & CAN_RTR_FLAG),
             dlc=dlc,
             data=b[13:13+dlc]
         )
