@@ -61,6 +61,11 @@ class TCPBus(can.BusABC):
     def _stop_threads(self):
         self._shutdown_flag.put(True)
         self._socket.close() #shutdown might be faster but can be ugly and raise an exception
+
+        # Make sure the socket is always closed
+        # See: https://stackoverflow.com/questions/409783/socket-shutdown-vs-socket-close
+        self._socket.shutdown(socket.SHUT_RDWR)
+        self._socket.close()
         self._is_connected = False
 
     def shutdown(self):
