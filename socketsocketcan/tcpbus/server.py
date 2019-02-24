@@ -18,26 +18,26 @@ class TCPBus(can.BusABC):
 
         self.hostname = hostname #TODO: check validity. ping?
         self.port = port #TODO: check validity.
-        self._is_connected = False
         self._recv_buffer = Queue()
         self._send_buffer = Queue()
         self._shutdown_flag = Event()
+        self._is_connected = Event()
 
         #open socket and wait for connection to establish.
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.bind((self.hostname, self.port))
         self._socket.listen(1)
         self._conn, addr = self._socket.accept()
-        self._is_connected = True
+        self._is_connected.set()
         self._conn.settimeout(0.5) #blocking makes exiting an infinite loop hard
 
         #now we're connected, kick off other threads.
         self._tcp_listener = Thread(target=self._poll_socket, name="tcpbus_poll_socket",
-                                    args=(self._conn, self._shutdown_flag, self._recv_buffer))
+                                    args=(self._conn, self._shutdown_flag, self._is_connected, self._recv_buffer))
         self._tcp_listener.start()
 
         self._tcp_writer = Thread(target=self._poll_send, name="tcpbus_poll_send",
-                                  args=(self._conn, self._shutdown_flag, self._send_buffer))
+                                  args=(self._conn, self._shutdown_flag, self._is_connected, self._send_buffer))
         self._tcp_writer.start()
 
     def _recv_internal(self, timeout=None):
@@ -72,17 +72,16 @@ class TCPBus(can.BusABC):
         self._tcp_listener.join()
         self._tcp_writer.join()
 
-        self._is_connected = False
+        self._is_connected.clear()
 
     def shutdown(self):
         """gracefully close TCP connection and exit threads"""
-        if self.is_connected:
-            self._stop_threads()
+        self._stop_threads()
 
     @property
     def is_connected(self):
         """check that a TCP connection is active"""
-        return self._is_connected
+        return self._is_connected.is_set()
 
     @staticmethod
     def _msg_to_bytes(msg):
@@ -117,10 +116,10 @@ class TCPBus(can.BusABC):
         )
 
     @staticmethod
-    def _poll_socket(connection, shutdown_flag, recv_buffer):
+    def _poll_socket(connection, shutdown_flag, connected_flag, recv_buffer):
         """background thread to check for new CAN messages on the TCP socket"""
         part_formed_message = bytearray() # TCP transfer might off part way through sending a message
-        while not shutdown_flag.is_set():
+        while not shutdown_flag.is_set() and connected_flag.is_set():
             try:
                 data = connection.recv(TCPBus.RECV_FRAME_SZ * 20)
             except socket.timeout:
@@ -156,10 +155,14 @@ class TCPBus(can.BusABC):
                 connection.close()
                 break
 
+        # Set the flags to signal that the connection has been closed
+        shutdown_flag.set()
+        connected_flag.clear()
+
     @staticmethod
-    def _poll_send(connection, shutdown_flag, send_buffer):
+    def _poll_send(connection, shutdown_flag, connected_flag, send_buffer):
         """background thread to send messages when they are put in the queue"""
-        while not shutdown_flag.is_set():
+        while not shutdown_flag.is_set() and connected_flag.is_set():
             try:
                 msg = send_buffer.get(timeout=0.02)
                 data = TCPBus._msg_to_bytes(msg)
@@ -172,3 +175,7 @@ class TCPBus(can.BusABC):
                     break
             except QueueEmpty:
                 pass  # NBD, just means nothing to send.
+
+        # Set the flags to signal that the connection has been closed
+        shutdown_flag.set()
+        connected_flag.clear()
