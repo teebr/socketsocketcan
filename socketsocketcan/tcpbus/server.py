@@ -63,7 +63,10 @@ class TCPBus(can.BusABC):
 
         # Make sure the socket is always closed
         # See: https://stackoverflow.com/questions/409783/socket-shutdown-vs-socket-close
-        self._socket.shutdown(socket.SHUT_RDWR)
+        try:
+            self._socket.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         self._socket.close()
 
         # Wait for the two threads to exit
