@@ -39,9 +39,9 @@ class TCPBus(can.BusABC):
         self._tcp_writer.start()
 
     def _recv_internal(self, timeout=None):
-        # TODO: filtering shit
+        # All filtering is done in the client
         try:
-            return self._recv_buffer.get(timeout=timeout), False
+            return self._recv_buffer.get(timeout=timeout), True
         except QueueEmpty:
             return None, False
 
