@@ -1,4 +1,11 @@
 # SocketCAN over TCP
+
+#### Original author Thomas Bruen
+#### Modified by Kristian Lauszus, 2019
+_________
+
+[![Build Status](https://travis-ci.com/Lauszus/socketsocketcan.svg?branch=pybind11)](https://travis-ci.com/Lauszus/socketsocketcan)
+
 For when you want to use the [Python CAN package](https://github.com/hardbyte/python-can) but are running on a resource-constrained device, such as a Raspberry Pi.
 
 I've found that for a busy bus (> 1000 messages/ second), my Raspberry Pi was dropping messages: we'd reached the limit of what Python could achieve. However, it's still a really powerful library for processing messages and integrating other services. 
@@ -9,13 +16,16 @@ This package lets you run `python-can` on a more powerful machine, by setting up
 
 # CAN Set-up
 Enable `vcan` or `can0` (or whichever) on the Linux device:
-```
+
+```bash
 sudo modprobe vcan
 sudo ip link add dev vcan0 type vcan
 sudo ip link set vcan0 up
 ```
+
 or
-```
+
+```bash
 sudo ip link set can0 up type can bitrate 1000000
 ```
 
@@ -28,7 +38,9 @@ By default the client is set to receive the message you've sent (personally I've
 ## Server
 Using a virtual environment is really recommended here.
 
-`pip install -e path/to/socketsocketcan-repo`
+```bash
+pip install -e path/to/socketsocketcan-repo
+```
 
 # Usage
 On creating a `TCPBus` object, it will block until a connection with the client is made (i.e. start the client now). Then, you can use the bus to `send()` and `recv()` messages as usual. By default, the bus accepts connections from any host, you can limit this using the `hostname="A_PARTICULAR_HOSTNAME"`keyword arguent. 
@@ -44,7 +56,8 @@ The client has a similar structure: there is one thread to poll the CAN bus for 
 e.g. `./client vcan0 my-can-server 5000`
 
 ## Server
-```
+
+```python
 from socketsocketcan import TCPBus
 from can import Message
 bus = TCPBus(5000) #start the client now.

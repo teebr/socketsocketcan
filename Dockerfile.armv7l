@@ -1,0 +1,21 @@
+FROM balenalib/armv7hf-debian:stretch
+
+COPY . /socketsocketcan
+
+RUN [ "cross-build-start" ]
+
+# Get dependencies.
+RUN apt-get update
+RUN apt-get install -y apt-utils
+RUN apt-get install -y build-essential python3-dev python3-pip
+RUN python3 -m pip install --index-url=https://www.piwheels.org/simple -U pip setuptools wheel pybind11
+
+# Build the wheel.
+RUN cd /socketsocketcan \
+    && python3 -m pip -v wheel --build=/build --wheel-dir=/wheels .
+
+# Make sure the wheel is working.
+RUN python3 -m pip install --find-links=/wheels socketsocketcan
+RUN python3 -c "import socketsocketcan; print(dir(socketsocketcan))"
+
+RUN [ "cross-build-end" ]
