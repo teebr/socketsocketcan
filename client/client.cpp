@@ -116,7 +116,7 @@ char read_buf_tcp[BUF_SZ]; // where serialized CAN frames are copied to and sent
 
 /* FUNCTIONS */
 void handle_signal(int signal) {
-    if (signal == SIGINT)
+    if (signal == SIGINT || signal == SIGTERM)
     {
         poll = false;
     }
@@ -124,6 +124,7 @@ void handle_signal(int signal) {
 }
 void error(const char* msg)
 {
+    poll = false;
     perror(msg);
     exit(0);
 }
@@ -139,6 +140,13 @@ int create_tcp_socket(const char* hostname, int port)
     {
         error("ERROR opening socket");
     }
+
+    // Enable 1s timeout, so the thread is not blocking
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+
     server = gethostbyname(hostname);
     if (server == NULL)
     {
@@ -171,13 +179,19 @@ int open_can_socket(const char *port, const struct can_filter *filter, int numfi
 
     // open socket
     soc = socket(PF_CAN, SOCK_RAW, CAN_RAW);
-    if(soc < 0)
+    if (soc < 0)
     {
         return (-1);
     }
 
     // configure socket
     setsockopt(soc, SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS, &LOOPBACK, sizeof(LOOPBACK));
+
+    // Enable 1s timeout, so the thread is not blocking
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    setsockopt(soc, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 
     const int ERR_MASK = CAN_ERR_MASK; // Enable error frames
     setsockopt(soc, SOL_CAN_RAW, CAN_RAW_ERR_FILTER, &ERR_MASK, sizeof(ERR_MASK));
@@ -247,7 +261,18 @@ void* read_poll_can(void* args)
             count = 0;
         }
 
-        read_frame(fd, &frame, &tv); //blocking
+        int num_bytes_can = read_frame(fd, &frame, &tv);
+        if (num_bytes_can == -1)
+        {
+            //if (errno == EAGAIN)
+                continue;
+            //error("Failed to read CAN frame.\n");
+        }
+        else if (num_bytes_can == 0)
+        {
+            //TODO: don't use error() call handle_signal
+            error("Socket closed at other end... exiting.\n");
+        }
 
         if (use_unordered_map)
         {
@@ -335,7 +360,7 @@ void* read_poll_tcp(void* args)
 
     size_t cpy_socketcan_bytes_available;
     int wait_rv;
-    while(poll)
+    while (poll)
     {
         pthread_mutex_lock(&read_mutex);
         tcp_ready_to_send = true;
@@ -391,10 +416,16 @@ void* write_poll(void* args)
     const size_t frame_sz = 13; // 4 id + 1 dlc + 8 bytes
     const size_t can_struct_sz = sizeof(struct can_frame);
 
-    while(poll)
+    while (poll)
     {
         int num_bytes_tcp = read(socks->tcp_sock,write_buf,BUF_SZ);
-        if(num_bytes_tcp == 0)
+        if (num_bytes_tcp == -1)
+        {
+            //if (errno == EAGAIN)
+                continue;
+            //error("Failed to read TCP socket.\n");
+        }
+        else if (num_bytes_tcp == 0)
         {
             //TODO: don't use error() call handle_signal
             error("Socket closed at other end... exiting.\n");
@@ -462,6 +493,9 @@ void print_frame(const timestamped_frame* tf)
 
 int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter, bool use_unordered_map, int limit_recv_rate_hz)
 {
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
+
     pthread_t read_can_thread, read_tcp_thread, write_thread;
     int tcp_socket, can_socket;
 
@@ -494,19 +528,19 @@ int tcpclient(const char *can_port, const char *hostname, int port, const struct
 #endif
 
     can_read_args read_args_can = { can_socket, use_unordered_map };
-    if(pthread_create(&read_can_thread, NULL, read_poll_can, (void*)&read_args_can) < 0)
+    if (pthread_create(&read_can_thread, NULL, read_poll_can, (void*)&read_args_can) < 0)
     {
         error("unable to create thread");
     }
 
     tcp_read_args read_args_tcp = { tcp_socket, limit_recv_rate_hz };
-    if(pthread_create(&read_tcp_thread, NULL, read_poll_tcp, (void*)&read_args_tcp) < 0)
+    if (pthread_create(&read_tcp_thread, NULL, read_poll_tcp, (void*)&read_args_tcp) < 0)
     {
         error("unable to create thread");
     }
 
     can_write_sockets write_args = { tcp_socket, can_socket };
-    if(pthread_create(&write_thread, NULL, write_poll, (void*)&write_args) < 0)
+    if (pthread_create(&write_thread, NULL, write_poll, (void*)&write_args) < 0)
     {
         error("unable to create thread");
     }
