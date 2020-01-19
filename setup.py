@@ -100,7 +100,7 @@ class BuildExt(build_ext):
 
 setuptools.setup(
     name="socketsocketcan",
-    version="0.0.1",
+    version="0.0.2",
     author="Thomas Bruen",
     # author_email="author@example.com",
     description="Socketcan over TCP",
