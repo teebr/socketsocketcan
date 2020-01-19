@@ -88,6 +88,13 @@ class BuildExt(build_ext):
             opts.append('/DVERSION_INFO=\\"%s\\"' % self.distribution.get_version())
         for ext in self.extensions:
             ext.extra_compile_args = opts
+
+        # Avoid gcc warning below:
+        # cc1plus: warning: command line option ‘-Wstrict-prototypes’ is valid
+        # for C/ObjC but not for C++
+        if '-Wstrict-prototypes' in self.compiler.compiler_so:
+            self.compiler.compiler_so.remove('-Wstrict-prototypes')
+
         build_ext.build_extensions(self)
 
 
