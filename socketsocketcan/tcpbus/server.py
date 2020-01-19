@@ -32,13 +32,18 @@ class TCPBus(can.BusABC):
         #now we're connected, kick off other threads.
         self._tcp_listener = Thread(target=self._poll_socket, name="tcpbus_poll_socket",
                                     args=(self._conn, self._shutdown_flag, self._is_connected, self._recv_buffer))
+        self._tcp_listener.daemon = False  # Make sure the application waits for this to finish
         self._tcp_listener.start()
 
         self._tcp_writer = Thread(target=self._poll_send, name="tcpbus_poll_send",
                                   args=(self._conn, self._shutdown_flag, self._is_connected, self._send_buffer))
+        self._tcp_writer.daemon = False  # Make sure the application waits for this to finish
         self._tcp_writer.start()
 
     def _recv_internal(self, timeout=None):
+        if self._shutdown_flag.is_set():
+            return None, False
+
         # All filtering is done in the client
         try:
             return self._recv_buffer.get(timeout=timeout), True
@@ -58,7 +63,7 @@ class TCPBus(can.BusABC):
             msg.arbitration_id |= CAN_ERR_FLAG
         self._send_buffer.put(msg, timeout=timeout)
 
-    def _stop_threads(self):
+    def _stop_threads(self, timeout):
         self._shutdown_flag.set()
 
         # Make sure the socket is always closed
@@ -70,14 +75,14 @@ class TCPBus(can.BusABC):
         self._socket.close()
 
         # Wait for the two threads to exit
-        self._tcp_listener.join()
-        self._tcp_writer.join()
+        self._tcp_listener.join(timeout)
+        self._tcp_writer.join(timeout)
 
         self._is_connected.clear()
 
-    def shutdown(self):
+    def shutdown(self, timeout=None):
         """gracefully close TCP connection and exit threads"""
-        self._stop_threads()
+        self._stop_threads(timeout)
 
     @property
     def is_connected(self):

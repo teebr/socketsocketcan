@@ -34,11 +34,11 @@ class TCPClient(object):
         self._tcp_client_process.daemon = True
         self._tcp_client_process.start()
 
-    def shutdown(self):
+    def shutdown(self, timeout=None):
         # Send SIGTERM to the process and wait for it to finish
         if self._tcp_client_process.is_alive():
             self._tcp_client_process.terminate()
-            self._tcp_client_process.join()
+            self._tcp_client_process.join(timeout=timeout)
         return self._tcp_client_process.exitcode
 
     @staticmethod
