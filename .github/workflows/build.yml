@@ -1,0 +1,104 @@
+name: socketsocketcan CI
+
+on: [push, pull_request]
+
+jobs:
+  armv7l:
+    name: Build armv7l wheels
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        docker_images: ['balenalib/armv7hf-debian:stretch', 'balenalib/armv7hf-debian:buster']
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build ${{ matrix.docker_images }} wheel
+      run: |
+        docker build -f Dockerfile.armv7l -t lauszus/socketsocketcan --build-arg APP_IMAGE="${{ matrix.docker_images }}" .
+        docker cp "$(docker create lauszus/socketsocketcan)":/socketsocketcan-wheel .
+        mkdir dist
+        cp socketsocketcan-wheel/socketsocketcan*.whl dist/
+    - name: Upload wheel as artifact
+      uses: actions/upload-artifact@v1
+      with:
+        name: socketsocketcan-${{ github.sha }}
+        path: dist
+  amd64:
+    name: Build amd64 wheels
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        python-version: [3.5, 3.6, 3.7, 3.8]
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v1
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: pip3 install -U pip setuptools wheel pybind11
+    - name: Build amd64 ${{ matrix.python-version }} wheel
+      run: pip3 -v wheel --wheel-dir=socketsocketcan-wheel .
+    - name: Run amd64 ${{ matrix.python-version }} wheel
+      run: |
+        # Make sure the wheel is working.
+        pip3 install --no-index --find-links=socketsocketcan-wheel socketsocketcan
+        python3 -c "import socketsocketcan; print(dir(socketsocketcan))"
+
+        # Copy over the wheel.
+        mkdir dist
+        cp socketsocketcan-wheel/socketsocketcan*.whl dist/
+    - name: Upload wheel as artifact
+      uses: actions/upload-artifact@v1
+      with:
+        name: socketsocketcan-${{ github.sha }}
+        path: dist
+  sdist:
+    name: Build sdist
+    runs-on: ubuntu-18.04
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v1
+      with:
+        python-version: 3.8
+    - name: Install dependencies
+      run: pip3 install -U pip setuptools wheel pybind11
+    - name: Build sdist
+      run: python3 setup.py sdist --formats=gztar,zip
+    - name: Upload sdist as artifact
+      uses: actions/upload-artifact@v1
+      with:
+        name: socketsocketcan-${{ github.sha }}
+        path: dist
+  release:
+    needs: [armv7l, amd64, sdist]
+    name: Release
+    runs-on: ubuntu-18.04
+    steps:
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v1
+      with:
+        python-version: 3.8
+    - uses: actions/download-artifact@v1
+      with:
+        name: socketsocketcan-${{ github.sha }}
+        path: socketsocketcan
+    - name: Publish to Candela PyPI
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        pip3 install -U pip setuptools wheel
+        pip3 install -U twine
+        twine upload --repository-url https://pypi.candelaspeedboat.com -u ${{ secrets.CANDELA_PYPI_USERNAME }} -p ${{ secrets.CANDELA_PYPI_PASSWORD }} socketsocketcan/*
+    - name: Calculate checksums
+      run: |
+        pushd socketsocketcan
+        sha256sum * > SHA256SUMS
+        popd
+    - name: Publish to Github Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: socketsocketcan/*
+        draft: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

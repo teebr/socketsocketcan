@@ -1,14 +1,14 @@
 # SocketCAN over TCP
 
 #### Original author Thomas Bruen
-#### Modified by Kristian Lauszus, 2019
+#### Modified by Kristian Lauszus, 2019-2020
 _________
 
-[![Build Status](https://travis-ci.com/Lauszus/socketsocketcan.svg?branch=pybind11)](https://travis-ci.com/Lauszus/socketsocketcan)
+[![](https://github.com/Lauszus/socketsocketcan/workflows/socketsocketcan%20CI/badge.svg?branch=pybind11)](https://github.com/Lauszus/socketsocketcan/actions?query=branch%3Apybind11)
 
 For when you want to use the [Python CAN package](https://github.com/hardbyte/python-can) but are running on a resource-constrained device, such as a Raspberry Pi.
 
-I've found that for a busy bus (> 1000 messages/ second), my Raspberry Pi was dropping messages: we'd reached the limit of what Python could achieve. However, it's still a really powerful library for processing messages and integrating other services. 
+I've found that for a busy bus (> 1000 messages/ second), my Raspberry Pi was dropping messages: we'd reached the limit of what Python could achieve. However, it's still a really powerful library for processing messages and integrating other services.
 
 This package lets you run `python-can` on a more powerful machine, by setting up a TCP connection to the Linux device. A small C client runs on the Linux device to send/ receive CAN messages (with timestamp). This is perfect for listening to a bus and sending occasional messages. I haven't tested this\* with anything that demands high-frequency periodic sending of messages, but using the CAN broadcast manager will probably be better than using this directly.
 
@@ -43,7 +43,7 @@ pip install -e path/to/socketsocketcan-repo
 ```
 
 # Usage
-On creating a `TCPBus` object, it will block until a connection with the client is made (i.e. start the client now). Then, you can use the bus to `send()` and `recv()` messages as usual. By default, the bus accepts connections from any host, you can limit this using the `hostname="A_PARTICULAR_HOSTNAME"`keyword arguent. 
+On creating a `TCPBus` object, it will block until a connection with the client is made (i.e. start the client now). Then, you can use the bus to `send()` and `recv()` messages as usual. By default, the bus accepts connections from any host, you can limit this using the `hostname="A_PARTICULAR_HOSTNAME"`keyword arguent.
 
 The `TCPBus` runs a couple of threads in the background: one to write 'sent' messages to the socket, so that the client can read them in and actually put them on the CAN bus, and another to receive and messages from the client and put them in a queue so the `recv` method can retrieve them.
 
