@@ -34,6 +34,10 @@ class TCPClient(object):
         self._tcp_client_process.daemon = True
         self._tcp_client_process.start()
 
+    @property
+    def pid(self):
+        return self._tcp_client_process.pid
+
     def shutdown(self, timeout=None):
         # Send SIGTERM to the process and wait for it to finish
         if self._tcp_client_process.is_alive():
