@@ -33,7 +33,7 @@ TODO: error frames aren't being looped back
 #endif
 
 #ifndef RECV_OWN_MSGS
-#define RECV_OWN_MSGS 1// if 1, we well receive messages we sent. useful for logging.
+#define RECV_OWN_MSGS 1 // If 1, we well receive messages we sent. useful for logging.
 #endif
 
 const int LOOPBACK = RECV_OWN_MSGS;
@@ -75,8 +75,11 @@ typedef struct
 // controlled exit in event of SIGINT
 void handle_signal(int signal);
 
-// print error information and exit (use before therads set-up)
-void error(const char* msg);
+// print error information and exit (use before threads set-up)
+void error(const char* msg, int error_code);
+
+// print error information and exit thread
+void pthread_error(const char* msg, int error_code);
 
 // open up a TCP connection to the server
 int create_tcp_socket(const char* hostname, int port);
@@ -116,17 +119,21 @@ char read_buf_tcp[BUF_SZ]; // where serialized CAN frames are copied to and sent
 
 /* FUNCTIONS */
 void handle_signal(int signal) {
-    if (signal == SIGINT || signal == SIGTERM)
-    {
-        poll = false;
-    }
-    //TODO: else what?
+    poll = false;
 }
-void error(const char* msg)
+
+void error(const char* msg, int error_code)
 {
     poll = false;
     perror(msg);
-    exit(0);
+    exit(error_code);
+}
+
+void pthread_error(const char* msg, int error_code)
+{
+    poll = false;
+    perror(msg);
+    pthread_exit(&error_code);
 }
 
 int create_tcp_socket(const char* hostname, int port)
@@ -138,20 +145,22 @@ int create_tcp_socket(const char* hostname, int port)
     fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0)
     {
-        error("ERROR opening socket");
+        error("ERROR opening socket", errno);
     }
 
     // Enable 1s timeout, so the thread is not blocking
     struct timeval tv;
     tv.tv_sec = 1;
     tv.tv_usec = 0;
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv) < 0)
+    {
+        error("ERROR setting timeout", errno);
+    }
 
     server = gethostbyname(hostname);
     if (server == NULL)
     {
-        fprintf(stderr, "ERROR, no such host\n");
-        exit(0);
+        error("ERROR, no such host", h_errno);
     }
     bzero((char *)&serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
@@ -159,19 +168,20 @@ int create_tcp_socket(const char* hostname, int port)
           (char *)&serv_addr.sin_addr.s_addr,
           server->h_length);
     serv_addr.sin_port = htons(port);
+
     if (connect(fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
 #if WAIT_FOR_TCP_CONNECTION
         return -1;
 #else
-        error("ERROR connecting");
+        error("ERROR connecting", errno);
 #endif
     }
 
     return fd;
 }
 
-int open_can_socket(const char *port, const struct can_filter *filter, int numfilter)
+int open_can_socket(const char *port, const struct can_filter *p_filter, int numfilter)
 {
     struct ifreq ifr;
     struct sockaddr_can addr;
@@ -181,45 +191,59 @@ int open_can_socket(const char *port, const struct can_filter *filter, int numfi
     soc = socket(PF_CAN, SOCK_RAW, CAN_RAW);
     if (soc < 0)
     {
-        return (-1);
+        error("ERROR failed to open socket", errno);
     }
 
     // configure socket
-    setsockopt(soc, SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS, &LOOPBACK, sizeof(LOOPBACK));
+    if (setsockopt(soc, SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS, &LOOPBACK, sizeof(LOOPBACK)) < 0)
+    {
+        error("ERROR setting loopback", errno);
+    }
 
     // Enable 1s timeout, so the thread is not blocking
     struct timeval tv;
     tv.tv_sec = 1;
     tv.tv_usec = 0;
-    setsockopt(soc, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+    if (setsockopt(soc, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv) < 0)
+    {
+        error("ERROR setting timeout", errno);
+    }
 
     const int ERR_MASK = CAN_ERR_MASK; // Enable error frames
-    setsockopt(soc, SOL_CAN_RAW, CAN_RAW_ERR_FILTER, &ERR_MASK, sizeof(ERR_MASK));
+    if (setsockopt(soc, SOL_CAN_RAW, CAN_RAW_ERR_FILTER, &ERR_MASK, sizeof(ERR_MASK)) < 0)
+    {
+        error("ERROR enabling error frames", errno);
+    }
 
     if (numfilter > 0)
     {
         // Set filter and mask
-        setsockopt(soc, SOL_CAN_RAW, CAN_RAW_FILTER, filter, numfilter * sizeof(struct can_filter));
+        if (setsockopt(soc, SOL_CAN_RAW, CAN_RAW_FILTER, p_filter, numfilter * sizeof(struct can_filter)) < 0)
+        {
+            error("ERROR setting user filter and masks", errno);
+        }
     }
     else
     {
         // Receive everything
         struct can_filter filter = { .can_id = 0, .can_mask = 0 };
-        setsockopt(soc, SOL_CAN_RAW, CAN_RAW_FILTER, &filter, sizeof(struct can_filter));
+        if (setsockopt(soc, SOL_CAN_RAW, CAN_RAW_FILTER, &filter, sizeof(struct can_filter)) < 0)
+        {
+            error("ERROR setting filter and masks", errno);
+        }
     }
 
     addr.can_family = AF_CAN;
     strcpy(ifr.ifr_name, port);
     if (ioctl(soc, SIOCGIFINDEX, &ifr) < 0)
     {
-        return (-1);
+        error("ERROR failed to set ioctl", errno);
     }
 
     addr.can_ifindex = ifr.ifr_ifindex; // why does this have to be after ioctl?
-
     if (bind(soc, (struct sockaddr *)&addr, sizeof(addr)) < 0)
     {
-        return (-1);
+        error("ERROR failed to bind to socket", errno);
     }
 
     return soc;
@@ -264,14 +288,15 @@ void* read_poll_can(void* args)
         int num_bytes_can = read_frame(fd, &frame, &tv);
         if (num_bytes_can == -1)
         {
-            //if (errno == EAGAIN)
-                continue;
-            //error("Failed to read CAN frame.\n");
+            // This happens when there is a timeout, we simply keep looping, as we want do not want to block while
+            // reading the CAN-Bus, as then we would never be able to shut down the threads if there was no activity
+            // on the bus
+            continue;
         }
         else if (num_bytes_can == 0)
         {
-            //TODO: don't use error() call handle_signal
-            error("Socket closed at other end... exiting.\n");
+            // This will happen when we shut down the client, so report an success
+            pthread_error("Socket closed at other end... exiting.\n", 0);
         }
 
         if (use_unordered_map)
@@ -319,7 +344,8 @@ void* read_poll_can(void* args)
                 const int signal_rv = pthread_cond_signal(&tcp_send_copied);
                 if (signal_rv < 0)
                 {
-                    error("could not signal to other thread.\n");
+                    pthread_mutex_unlock(&read_mutex);
+                    pthread_error("could not signal to other thread.\n", signal_rv);
                 }
 
 #if DEBUG
@@ -336,7 +362,8 @@ void* read_poll_can(void* args)
                 const int signal_rv = pthread_cond_signal(&tcp_send_copied);
                 if (signal_rv < 0)
                 {
-                    error("could not signal to other thread.\n");
+                    pthread_mutex_unlock(&read_mutex);
+                    pthread_error("could not signal to other thread.\n", signal_rv);
                 }
 
 #if DEBUG
@@ -367,10 +394,17 @@ void* read_poll_tcp(void* args)
         while (!socketcan_bytes_available)
         {
             wait_rv = pthread_cond_wait(&tcp_send_copied, &read_mutex);
+            if (!poll)
+            {
+                // Break out if the poll flag has gone low
+                pthread_mutex_unlock(&read_mutex);
+                break;
+            }
         }
         if (wait_rv < 0)
         {
-            error("could not resume TCP send thread.\n");
+            pthread_mutex_unlock(&read_mutex);
+            pthread_error("could not resume TCP send thread.\n", wait_rv);
         }
         cpy_socketcan_bytes_available = socketcan_bytes_available; // we should only access the original inside a mutex.
         socketcan_bytes_available = 0;
@@ -383,7 +417,7 @@ void* read_poll_tcp(void* args)
         int n = write(tcp_socket, read_buf_tcp,cpy_socketcan_bytes_available);
         if (n < cpy_socketcan_bytes_available)
         {
-            error("failed to sent all bytes over TCP");
+            pthread_error("failed to sent all bytes over TCP", EXIT_FAILURE);
         }
 #if DEBUG
         printf("%d bytes written to TCP\n",n);
@@ -421,14 +455,15 @@ void* write_poll(void* args)
         int num_bytes_tcp = read(socks->tcp_sock,write_buf,BUF_SZ);
         if (num_bytes_tcp == -1)
         {
-            //if (errno == EAGAIN)
-                continue;
-            //error("Failed to read TCP socket.\n");
+            // This happens when there is a timeout, we simply keep looping, as we want do not want to block while
+            // reading the CAN-Bus, as then we would never be able to shut down the threads if there was no activity
+            // on the bus
+            continue;
         }
         else if (num_bytes_tcp == 0)
         {
-            //TODO: don't use error() call handle_signal
-            error("Socket closed at other end... exiting.\n");
+            // This will happen when we shut down the client, so report an success
+            pthread_error("Socket closed at other end... exiting.\n", 0);
         }
 #if DEBUG
         printf("%d bytes read from TCP.\n",num_bytes_tcp);
@@ -452,7 +487,7 @@ void* write_poll(void* args)
             if (num_bytes_can < can_struct_sz)
             {
                 printf("only send %d bytes of can message.\n",num_bytes_can);
-                error("failed to send complete CAN message!\n");
+                pthread_error("failed to send complete CAN message!\n", EXIT_FAILURE);
             }
             bufpnt += frame_sz;
         }
@@ -497,16 +532,19 @@ int tcpclient(const char *can_port, const char *hostname, int port, const struct
     signal(SIGTERM, handle_signal);
 
     pthread_t read_can_thread, read_tcp_thread, write_thread;
-    int tcp_socket, can_socket;
+    int tcp_socket, can_socket, thread_rv;
 
     // initialising stuff
     if (pthread_mutex_init(&read_mutex, NULL) != 0)
     {
-        printf("\n mutex init has failed\n");
-        return 1;
+        error("mutex init has failed", EXIT_FAILURE);
     }
 
     can_socket = open_can_socket(can_port, filter, numfilter);
+    if (can_socket < 0)
+    {
+        error("unable to create read can thread", can_socket);
+    }
 
 #if WAIT_FOR_TCP_CONNECTION
 #if DEBUG
@@ -528,26 +566,43 @@ int tcpclient(const char *can_port, const char *hostname, int port, const struct
 #endif
 
     can_read_args read_args_can = { can_socket, use_unordered_map };
-    if (pthread_create(&read_can_thread, NULL, read_poll_can, (void*)&read_args_can) < 0)
+    thread_rv = pthread_create(&read_can_thread, NULL, read_poll_can, (void*)&read_args_can);
+    if (thread_rv < 0)
     {
-        error("unable to create thread");
+        error("unable to create read can thread", thread_rv);
     }
 
     tcp_read_args read_args_tcp = { tcp_socket, limit_recv_rate_hz };
-    if (pthread_create(&read_tcp_thread, NULL, read_poll_tcp, (void*)&read_args_tcp) < 0)
+    thread_rv = pthread_create(&read_tcp_thread, NULL, read_poll_tcp, (void*)&read_args_tcp);
+    if (thread_rv < 0)
     {
-        error("unable to create thread");
+        error("unable to create read tcp thread", thread_rv);
     }
 
     can_write_sockets write_args = { tcp_socket, can_socket };
-    if (pthread_create(&write_thread, NULL, write_poll, (void*)&write_args) < 0)
+    thread_rv = pthread_create(&write_thread, NULL, write_poll, (void*)&write_args);
+    if (thread_rv < 0)
     {
-        error("unable to create thread");
+        error("unable to create write thread", thread_rv);
     }
 
-    pthread_join(read_can_thread,NULL);
-    pthread_join(read_tcp_thread,NULL);
-    pthread_join(write_thread,NULL);
+    thread_rv = pthread_join(read_can_thread,NULL);
+    if (thread_rv < 0)
+    {
+        error("read can thread failed", thread_rv);
+    }
+
+    thread_rv = pthread_join(read_tcp_thread,NULL);
+    if (thread_rv < 0)
+    {
+        error("read tcp thread failed", thread_rv);
+    }
+
+    thread_rv = pthread_join(write_thread,NULL);
+    if (thread_rv < 0)
+    {
+        error("write thread failed", thread_rv);
+    }
 
     return 0;
 }
