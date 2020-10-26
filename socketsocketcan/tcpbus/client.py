@@ -19,7 +19,8 @@ class TCPClient(object):
         :param use_unordered_map: Override the any old frames if a new one is received before the server has had time
         to read it yet. This can be used together with "limit_recv_rate_hz" to limit the update rate while still
         receiving the latest data.
-        :param limit_recv_rate_hz: Allow to limit the receive update rate.
+        :param limit_recv_rate_hz: Allow to limit the receive update rate. Can be set to 0 to disable receiving
+        completely.
         """
         self.channel = channel
         self.hostname = hostname
