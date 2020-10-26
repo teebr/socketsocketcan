@@ -1,4 +1,5 @@
 import multiprocessing
+from typing import Optional, Dict, Union, List
 
 import psutil
 from can.interfaces.socketcan.constants import CAN_EFF_FLAG
@@ -8,8 +9,8 @@ from tcpclient import tcpclient
 
 class TCPClient(object):
 
-    def __init__(self, channel, hostname, port, can_filters=None, use_unordered_map=False,
-                 limit_recv_rate_hz=None):
+    def __init__(self, channel: str, hostname: str, port: int, can_filters: List[Dict[str, Union[int, bool]]] = None,
+                 use_unordered_map=False, limit_recv_rate_hz: int = None):
         """
         :param channel: Can interface to use.
         :param hostname: Hostname used for the socket.
@@ -39,11 +40,13 @@ class TCPClient(object):
     def pid(self):
         return self._tcp_client_process.pid
 
-    def shutdown(self, timeout=None):
+    def shutdown(self, timeout=None) -> Optional[int]:
         # Send SIGTERM to the process and wait for it to finish
         if self._tcp_client_process.is_alive():
             self._tcp_client_process.terminate()
             self._tcp_client_process.join(timeout=timeout)
+
+        # The exitcode will be None if the process is still alive
         return self._tcp_client_process.exitcode
 
     def kill(self, timeout=None):
