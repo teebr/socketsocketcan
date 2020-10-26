@@ -4,7 +4,7 @@ can_filters = [{'can_id': 0, 'can_mask': 0}]
 client = TCPClient('can0', 'localhost', 5000, can_filters, use_unordered_map=False, limit_recv_rate_hz=None)
 print("client started")
 
-bus = TCPBus(5000)
+bus = TCPBus(5000, 'localhost')
 print("socket connected!")
 
 try:
