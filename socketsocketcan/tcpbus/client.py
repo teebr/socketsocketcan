@@ -1,5 +1,6 @@
 import multiprocessing
 
+import psutil
 from can.interfaces.socketcan.constants import CAN_EFF_FLAG
 # noinspection PyUnresolvedReferences
 from tcpclient import tcpclient
@@ -44,6 +45,16 @@ class TCPClient(object):
             self._tcp_client_process.terminate()
             self._tcp_client_process.join(timeout=timeout)
         return self._tcp_client_process.exitcode
+
+    def kill(self, timeout=None):
+        # Get an instance of the process
+        process = psutil.Process(self.pid)
+
+        # Send SIGKILL to the process
+        process.kill()
+
+        # Wait for the process to end
+        return process.wait(timeout)
 
     @staticmethod
     def _tcp_client(channel, hostname, port, can_filters, use_unordered_map, limit_recv_rate_hz):

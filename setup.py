@@ -107,7 +107,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     ext_modules=ext_modules,
-    install_requires=['python-can'],
+    install_requires=['python-can', 'psutil'],
     setup_requires=['pybind11>=2.4'],
     cmdclass={'build_ext': BuildExt},
     zip_safe=False,
