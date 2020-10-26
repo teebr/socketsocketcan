@@ -10,7 +10,7 @@ from tcpclient import tcpclient
 class TCPClient(object):
 
     def __init__(self, channel: str, hostname: str, port: int, can_filters: List[Dict[str, Union[int, bool]]] = None,
-                 use_unordered_map=False, limit_recv_rate_hz: int = None):
+                 use_unordered_map=False, limit_recv_rate_hz: float = None):
         """
         :param channel: Can interface to use.
         :param hostname: Hostname used for the socket.

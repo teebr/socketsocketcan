@@ -62,7 +62,7 @@ typedef struct
 typedef struct
 {
     int tcp_sock;
-    int limit_recv_rate_hz;
+    float limit_recv_rate_hz;
 } tcp_read_args; // used to supply multiple thread args.
 
 typedef struct
@@ -400,7 +400,7 @@ void* read_poll_tcp(void* args)
 
     tcp_read_args* read_args = (tcp_read_args*)args;
     int tcp_socket = read_args->tcp_sock;
-    int limit_recv_rate_hz = read_args->limit_recv_rate_hz;
+    float limit_recv_rate_hz = read_args->limit_recv_rate_hz;
 
     size_t cpy_socketcan_bytes_available;
     int wait_rv = 0;
@@ -451,7 +451,7 @@ void* read_poll_tcp(void* args)
         if (limit_recv_rate_hz > 0)
         {
             struct timespec ts;
-            int milliseconds = (int)roundf(1000.0f / (float)limit_recv_rate_hz);
+            int milliseconds = (int)roundf(1000.0f / limit_recv_rate_hz);
             ts.tv_sec = milliseconds / 1000;
             ts.tv_nsec = (milliseconds % 1000) * 1000000;
             nanosleep(&ts, NULL);
@@ -564,7 +564,7 @@ void print_frame(const timestamped_frame* tf)
     printf("\n");
 }
 
-int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter, bool use_unordered_map, int limit_recv_rate_hz)
+int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter, bool use_unordered_map, float limit_recv_rate_hz)
 {
 #if DEBUG
     printf("tcpclient started\n");

@@ -5,11 +5,11 @@
 
 namespace py = pybind11;
 
-int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter, bool use_unordered_map, int limit_recv_rate_hz);
+int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter, bool use_unordered_map, float limit_recv_rate_hz);
 
 int tcpclient_wrapper(const char *can_port, const char *hostname, int port, py::list filters, bool use_unordered_map, py::object limit_recv_rate_hz_obj) {
     int numfilter = filters.size();
-    int limit_recv_rate_hz = limit_recv_rate_hz_obj.is_none() ? -1 : limit_recv_rate_hz_obj.cast<int>();
+    float limit_recv_rate_hz = limit_recv_rate_hz_obj.is_none() ? -1 : limit_recv_rate_hz_obj.cast<float>();
     //py::print(limit_recv_rate_hz);
 
     int retval = -1;
