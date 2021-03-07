@@ -5,7 +5,7 @@ on: [push, pull_request]
 jobs:
   armv7l:
     name: Build armv7l wheels
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     strategy:
       matrix:
         docker_images: ['balenalib/armv7hf-debian:stretch', 'balenalib/armv7hf-debian:buster']
@@ -24,7 +24,7 @@ jobs:
         path: dist
   amd64:
     name: Build amd64 wheels
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     strategy:
       matrix:
         python-version: [3.5, 3.6, 3.7, 3.8, 3.9]
@@ -54,7 +54,7 @@ jobs:
         path: dist
   sdist:
     name: Build sdist
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python 3.9
@@ -73,7 +73,7 @@ jobs:
   release:
     needs: [armv7l, amd64, sdist]
     name: Release
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
     - name: Set up Python 3.9
       uses: actions/setup-python@v2
