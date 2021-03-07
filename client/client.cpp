@@ -399,7 +399,6 @@ void* read_poll_tcp(void* args)
             if (!poll)
             {
                 // Break out if the poll flag has gone low
-                pthread_mutex_unlock(&read_mutex);
                 break;
             }
         }
