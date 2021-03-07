@@ -403,6 +403,7 @@ void* read_poll_tcp(void* args)
             if (!poll)
             {
                 // Break out if the poll flag has gone low
+                socketcan_bytes_available = 0; // We do not care about the data, as we are about to exit
                 break;
             }
         }
