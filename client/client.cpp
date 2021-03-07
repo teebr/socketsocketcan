@@ -10,6 +10,7 @@ TODO: error frames aren't being looped back
 #include <netinet/in.h>
 #include <netdb.h>
 #include <math.h>
+#include <cerrno>
 
 #include <string.h>
 #include <unistd.h>
@@ -18,6 +19,7 @@ TODO: error frames aren't being looped back
 #include <net/if.h>
 #include <linux/can.h>
 #include <linux/can/raw.h>
+#include <linux/sockios.h>
 #include <sys/time.h>
 #include <stdint.h>
 #include <stdbool.h>

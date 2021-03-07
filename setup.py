@@ -1,9 +1,13 @@
 import glob
 import os
+import re
 import sys
 
 import setuptools
 from setuptools.command.build_ext import build_ext
+
+with open('socketsocketcan/__init__.py', 'r') as f:
+    version = re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', f.read(), re.MULTILINE).group(1)
 
 with open('README.md', 'r') as fd:
     long_description = fd.read()
@@ -100,14 +104,14 @@ class BuildExt(build_ext):
 
 setuptools.setup(
     name="socketsocketcan",
-    version="0.0.2",
-    author="Thomas Bruen",
-    # author_email="author@example.com",
+    version=version,
+    author="Thomas Bruen, Kristian Sloth Lauszus",
+    author_email="lauszus@gmail.com",
     description="Socketcan over TCP",
     long_description=long_description,
     long_description_content_type="text/markdown",
     ext_modules=ext_modules,
-    install_requires=['python-can'],
+    install_requires=['python-can', 'psutil'],
     setup_requires=['pybind11>=2.4'],
     cmdclass={'build_ext': BuildExt},
     zip_safe=False,
