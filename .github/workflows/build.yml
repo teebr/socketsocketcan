@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        docker_images: ['balenalib/armv7hf-debian:stretch', 'balenalib/armv7hf-debian:buster']
+        docker_images: ['balenalib/armv7hf-debian:stretch', 'balenalib/armv7hf-debian:buster', 'balenalib/armv7hf-debian:bullseye']
     steps:
     - uses: actions/checkout@v2
     - name: Build ${{ matrix.docker_images }} wheel
