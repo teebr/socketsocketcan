@@ -378,6 +378,10 @@ void* read_poll_can(void* args)
         pthread_mutex_unlock(&read_mutex);
     }
 
+    // Make sure the 'read_poll_tcp' thread is unblocked
+    // No need to lock the mutex, as we do not care about predictable scheduling behaviour, as we are about to exit
+    (void)pthread_cond_signal(&tcp_send_copied);
+
     pthread_exit(NULL);
 }
 
