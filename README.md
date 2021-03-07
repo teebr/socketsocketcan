@@ -1,7 +1,7 @@
 # SocketCAN over TCP
 
 #### Original author Thomas Bruen
-#### Modified by Kristian Lauszus, 2019-2020
+#### Modified by Kristian Lauszus, 2019-2021
 _________
 
 [![](https://github.com/Lauszus/socketsocketcan/workflows/socketsocketcan%20CI/badge.svg)](https://github.com/Lauszus/socketsocketcan/actions?query=branch%3Amaster)
