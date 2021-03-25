@@ -350,7 +350,7 @@ void* read_poll_can(void* args)
                 }
 
 #if DEBUG
-                printf("%d bytes copied to TCP buffer", socketcan_bytes_available);
+                printf("%zu bytes copied to TCP buffer.\n", socketcan_bytes_available);
 #endif
                 hash_map.clear();
             }
@@ -368,7 +368,7 @@ void* read_poll_can(void* args)
                 }
 
 #if DEBUG
-                printf("%d bytes copied to TCP buffer.\n",count);
+                printf("%zu bytes copied to TCP buffer.\n", count);
 #endif
                 bufpnt = read_buf_can; //start filling up buffer again
                 count = 0;
@@ -417,7 +417,7 @@ void* read_poll_tcp(void* args)
 
         // don't want to perform the write inside mutex;
 #if DEBUG
-        printf("ready to send %d bytes\n",cpy_socketcan_bytes_available);
+        printf("ready to send %zu bytes\n", cpy_socketcan_bytes_available);
 #endif
         int n = write(tcp_socket, read_buf_tcp,cpy_socketcan_bytes_available);
         if (n < 0)
