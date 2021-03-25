@@ -112,7 +112,7 @@ void print_frame(const timestamped_frame* tf);
 pthread_mutex_t read_mutex = PTHREAD_MUTEX_INITIALIZER;
 sig_atomic_t poll = true; // for "infinite loops" in threads.
 bool tcp_ready_to_send = true; // only access inside of mutex
-size_t socketcan_bytes_available;// only access inside of mutex
+size_t socketcan_bytes_available = 0;// only access inside of mutex
 
 pthread_cond_t tcp_send_copied; //signal to enable thread.
 
