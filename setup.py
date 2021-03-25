@@ -99,6 +99,9 @@ class BuildExt(build_ext):
         if '-Wstrict-prototypes' in self.compiler.compiler_so:
             self.compiler.compiler_so.remove('-Wstrict-prototypes')
 
+        # Make all warnings into errors.
+        opts.append('-Werror')
+
         build_ext.build_extensions(self)
 
 
