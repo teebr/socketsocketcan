@@ -112,7 +112,7 @@ void print_frame(const timestamped_frame* tf);
 pthread_mutex_t read_mutex = PTHREAD_MUTEX_INITIALIZER;
 sig_atomic_t poll = true; // for "infinite loops" in threads.
 bool tcp_ready_to_send = true; // only access inside of mutex
-size_t socketcan_bytes_available;// only access inside of mutex
+size_t socketcan_bytes_available = 0;// only access inside of mutex
 
 pthread_cond_t tcp_send_copied; //signal to enable thread.
 
@@ -134,7 +134,7 @@ void error(const char* msg, int error_code)
 void pthread_error(const char* msg, int error_code)
 {
     poll = false;
-    perror(msg);
+    printf("%s: %d\n", msg, error_code);
     pthread_exit(&error_code);
 }
 
@@ -298,7 +298,7 @@ void* read_poll_can(void* args)
         else if (num_bytes_can == 0)
         {
             // This will happen when we shut down the client, so report an success
-            pthread_error("Socket closed at other end... exiting.\n", 0);
+            pthread_error("Socket closed at other end... exiting", 0);
         }
 
         if (use_unordered_map)
@@ -347,11 +347,11 @@ void* read_poll_can(void* args)
                 if (signal_rv < 0)
                 {
                     pthread_mutex_unlock(&read_mutex);
-                    pthread_error("could not signal to other thread.\n", signal_rv);
+                    pthread_error("could not signal to other thread", signal_rv);
                 }
 
 #if DEBUG
-                printf("%d bytes copied to TCP buffer.\n", socketcan_bytes_available);
+                printf("%d bytes copied to TCP buffer", socketcan_bytes_available);
 #endif
                 hash_map.clear();
             }
@@ -365,7 +365,7 @@ void* read_poll_can(void* args)
                 if (signal_rv < 0)
                 {
                     pthread_mutex_unlock(&read_mutex);
-                    pthread_error("could not signal to other thread.\n", signal_rv);
+                    pthread_error("could not signal to other thread", signal_rv);
                 }
 
 #if DEBUG
@@ -378,6 +378,10 @@ void* read_poll_can(void* args)
         pthread_mutex_unlock(&read_mutex);
     }
 
+    // Make sure the 'read_poll_tcp' thread is unblocked
+    // No need to lock the mutex, as we do not care about predictable scheduling behaviour, as we are about to exit
+    (void)pthread_cond_signal(&tcp_send_copied);
+
     pthread_exit(NULL);
 }
 
@@ -388,7 +392,7 @@ void* read_poll_tcp(void* args)
     int limit_recv_rate_hz = read_args->limit_recv_rate_hz;
 
     size_t cpy_socketcan_bytes_available;
-    int wait_rv;
+    int wait_rv = 0;
     while (poll)
     {
         pthread_mutex_lock(&read_mutex);
@@ -399,14 +403,14 @@ void* read_poll_tcp(void* args)
             if (!poll)
             {
                 // Break out if the poll flag has gone low
-                pthread_mutex_unlock(&read_mutex);
+                socketcan_bytes_available = 0; // We do not care about the data, as we are about to exit
                 break;
             }
         }
         if (wait_rv < 0)
         {
             pthread_mutex_unlock(&read_mutex);
-            pthread_error("could not resume TCP send thread.\n", wait_rv);
+            pthread_error("could not resume TCP send thread", wait_rv);
         }
         cpy_socketcan_bytes_available = socketcan_bytes_available; // we should only access the original inside a mutex.
         socketcan_bytes_available = 0;
@@ -465,7 +469,7 @@ void* write_poll(void* args)
         else if (num_bytes_tcp == 0)
         {
             // This will happen when we shut down the client, so report an success
-            pthread_error("Socket closed at other end... exiting.\n", 0);
+            pthread_error("Socket closed at other end... exiting", 0);
         }
 #if DEBUG
         printf("%d bytes read from TCP.\n",num_bytes_tcp);
@@ -489,7 +493,7 @@ void* write_poll(void* args)
             if (num_bytes_can < can_struct_sz)
             {
                 printf("only send %d bytes of can message.\n",num_bytes_can);
-                pthread_error("failed to send complete CAN message!\n", EXIT_FAILURE);
+                pthread_error("failed to send complete CAN message!", EXIT_FAILURE);
             }
             bufpnt += frame_sz;
         }

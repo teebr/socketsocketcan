@@ -2,6 +2,7 @@ import socket
 from queue import Empty as QueueEmpty
 from queue import Queue
 from threading import Thread, Event
+from typing import Dict, Union, List
 
 import can
 from can.interfaces.socketcan.constants import CAN_ERR_FLAG, CAN_RTR_FLAG, CAN_EFF_FLAG
@@ -10,7 +11,7 @@ from can.interfaces.socketcan.constants import CAN_ERR_FLAG, CAN_RTR_FLAG, CAN_E
 class TCPBus(can.BusABC):
     RECV_FRAME_SZ = 21
 
-    def __init__(self, port, hostname="", can_filters=None, **kwargs):
+    def __init__(self, port: int, hostname: str, can_filters: List[Dict[str, Union[int, bool]]] = None, **kwargs):
         self.channel_info = "tcpbus port: {} hostname: {}".format(port, hostname)
         super(TCPBus, self).__init__('tcpbus', can_filters=can_filters, **kwargs)
 
