@@ -26,7 +26,6 @@ TODO: error frames aren't being looped back
 #include <pthread.h>
 #include <unordered_map>
 
-#define HOSTNAME_LEN 128
 #define BUF_SZ 100000
 
 /* CONFIG PARAMETERS */
@@ -421,9 +420,14 @@ void* read_poll_tcp(void* args)
         printf("ready to send %d bytes\n",cpy_socketcan_bytes_available);
 #endif
         int n = write(tcp_socket, read_buf_tcp,cpy_socketcan_bytes_available);
-        if (n < cpy_socketcan_bytes_available)
+        if (n < 0)
         {
-            pthread_error("failed to sent all bytes over TCP", EXIT_FAILURE);
+            pthread_error("failed to write bytes over TCP socket", EXIT_FAILURE);
+        }
+        else if ((size_t)n < cpy_socketcan_bytes_available)
+        {
+            printf("only send %d bytes of TCP message.\n", n);
+            pthread_error("failed to sent all bytes over TCP socket", EXIT_FAILURE);
         }
 #if DEBUG
         printf("%d bytes written to TCP\n",n);
@@ -472,7 +476,7 @@ void* write_poll(void* args)
             pthread_error("Socket closed at other end... exiting", 0);
         }
 #if DEBUG
-        printf("%d bytes read from TCP.\n",num_bytes_tcp);
+        printf("%d bytes read from TCP.\n", num_bytes_tcp);
 #endif
         int num_frames = num_bytes_tcp / frame_sz;
 
@@ -490,9 +494,13 @@ void* write_poll(void* args)
             printf("\n");
 #endif
             int num_bytes_can = write(socks->can_sock, &frame, can_struct_sz);
-            if (num_bytes_can < can_struct_sz)
+            if (num_bytes_can < 0)
             {
-                printf("only send %d bytes of can message.\n",num_bytes_can);
+                pthread_error("failed to write bytes over CAN socket", EXIT_FAILURE);
+            }
+            else if ((size_t)num_bytes_can < can_struct_sz)
+            {
+                printf("only send %d bytes of can message.\n", num_bytes_can);
                 pthread_error("failed to send complete CAN message!", EXIT_FAILURE);
             }
             bufpnt += frame_sz;
@@ -615,10 +623,6 @@ int tcpclient(const char *can_port, const char *hostname, int port, const struct
 
 int main(int argc, char* argv[])
 {
-    int port;
-    char hostname[HOSTNAME_LEN];
-    char can_port[HOSTNAME_LEN];
-
     // arg parsing
     if (argc < 4)
     {
@@ -626,9 +630,9 @@ int main(int argc, char* argv[])
         exit(0);
     }
 
-    strncpy(can_port, argv[1], HOSTNAME_LEN);
-    strncpy(hostname, argv[2], HOSTNAME_LEN);
-    port = atoi(argv[3]);
+    char *can_port = argv[1];
+    char *hostname = argv[2];
+    int port = atoi(argv[3]);
 
     return tcpclient(can_port, hostname, port, NULL, 0, false, -1);
 }
