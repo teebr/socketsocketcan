@@ -392,7 +392,7 @@ void* read_poll_tcp(void* args)
     int limit_recv_rate_hz = read_args->limit_recv_rate_hz;
 
     size_t cpy_socketcan_bytes_available;
-    int wait_rv;
+    int wait_rv = 0;
     while (poll)
     {
         pthread_mutex_lock(&read_mutex);
