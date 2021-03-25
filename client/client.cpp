@@ -133,7 +133,7 @@ void error(const char* msg, int error_code)
 void pthread_error(const char* msg, int error_code)
 {
     poll = false;
-    printf("%s: %d\n", msg, error_code);
+    fprintf(stderr, "%s: %d\n", msg, error_code);
     pthread_exit(&error_code);
 }
 
@@ -426,7 +426,7 @@ void* read_poll_tcp(void* args)
         }
         else if ((size_t)n < cpy_socketcan_bytes_available)
         {
-            printf("only send %d bytes of TCP message.\n", n);
+            fprintf(stderr, "only send %d bytes of TCP message.\n", n);
             pthread_error("failed to sent all bytes over TCP socket", EXIT_FAILURE);
         }
 #if DEBUG
@@ -500,7 +500,7 @@ void* write_poll(void* args)
             }
             else if ((size_t)num_bytes_can < can_struct_sz)
             {
-                printf("only send %d bytes of can message.\n", num_bytes_can);
+                fprintf(stderr, "only send %d bytes of can message.\n", num_bytes_can);
                 pthread_error("failed to send complete CAN message!", EXIT_FAILURE);
             }
             bufpnt += frame_sz;
