@@ -1,11 +1,11 @@
 from socketsocketcan import TCPBus
 import can
-from datetime import datetime   
+from datetime import datetime
 from time import sleep, perf_counter
 from queue import Queue
 import struct
 
-bus = TCPBus(5000)
+bus = TCPBus(5000, 'localhost')
 print("socket connected!")
 
 class BinaryLogger(can.Listener):
@@ -17,7 +17,7 @@ class BinaryLogger(can.Listener):
         self.buffer = Queue()
         self._count = 0
         self.total_count = 0
-    
+
     def on_message_received(self,msg):
         self.buffer.put(msg)
         self._count += 1
@@ -25,7 +25,7 @@ class BinaryLogger(can.Listener):
         if self._count > 100:
             self.write_to_file()
             self._count = 0
-    
+
     def on_error(self):
         self.write_to_file()
 
@@ -37,7 +37,7 @@ class BinaryLogger(can.Listener):
                 usec = int((msg.timestamp - sec) * 1e6)
                 data = msg.data + bytearray(8-msg.dlc)
                 fd.write(struct.pack("<LLL9B",sec,usec,msg.arbitration_id,msg.dlc,*data))
-    
+
 logger = BinaryLogger()
 filename = logger.filename
 #create a listener to print all received messages
@@ -67,7 +67,7 @@ finally:
     logger.write_to_file()
     print(count,"messages sent")
     print("messages logged:",logger.total_count)
-        
+
     with open(filename,"rb") as fd:
         ts_sent_prev = 0
         ts_sent_first = 0
@@ -80,7 +80,7 @@ finally:
             if len(row) == 0:
                 break
             count += 1
-            
+
             sec,usec,arb_id,dlc = struct.unpack("<LLLB",row[:13])
             ts = sec + (usec/1e6)
             if count == 1:
