@@ -28,7 +28,7 @@ class get_pybind_include(object):
 ext_modules = [
     setuptools.Extension(
         'tcpclient',
-        sources=glob.glob(os.path.join(os.path.dirname(__file__), 'client', '*.cpp')),
+        sources=glob.glob(os.path.join('client', '*.cpp')),
         include_dirs=[
             # Path to pybind11 headers
             get_pybind_include(),
