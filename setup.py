@@ -81,6 +81,10 @@ class BuildExt(build_ext):
         c_opts['unix'] += ['-stdlib=libc++', '-mmacosx-version-min=10.7']
 
     def build_extensions(self):
+        if sys.platform != 'linux':
+            # Only try to build the extension on a Linux device
+            return
+
         ct = self.compiler.compiler_type
         opts = self.c_opts.get(ct, [])
         if ct == 'unix':
