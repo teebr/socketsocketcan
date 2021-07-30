@@ -1,6 +1,6 @@
 from socketsocketcan import TCPBus
 import can
-from datetime import datetime   
+from datetime import datetime
 from time import sleep, perf_counter
 from queue import Queue
 import struct
@@ -17,7 +17,7 @@ class BinaryLogger(can.Listener):
         self.buffer = Queue()
         self._count = 0
         self.total_count = 0
-    
+
     def on_message_received(self,msg):
         self.buffer.put(msg)
         self._count += 1
@@ -25,7 +25,7 @@ class BinaryLogger(can.Listener):
         if self._count > 100:
             self.write_to_file()
             self._count = 0
-    
+
     def on_error(self):
         self.write_to_file()
 
@@ -42,7 +42,7 @@ class BinaryLogger(can.Listener):
                     data = bytearray(8)
                 fd.write(struct.pack("<LLL9B",sec,usec,msg.arbitration_id,msg.dlc,*data))
 
-    
+
 logger = BinaryLogger()
 filename = logger.filename
 #create a listener to print all received messages
@@ -71,6 +71,6 @@ finally:
     logger.write_to_file()
     dt = t1-t0
     print(count,"messages in ",dt,"seconds. Period:",1000*dt/count)
-    
+
 
 

@@ -26,7 +26,6 @@ TODO: error frames aren't being looped back
 #include <pthread.h>
 #include <unordered_map>
 
-#define HOSTNAME_LEN 128
 #define BUF_SZ 100000
 
 /* CONFIG PARAMETERS */
@@ -134,7 +133,7 @@ void error(const char* msg, int error_code)
 void pthread_error(const char* msg, int error_code)
 {
     poll = false;
-    printf("%s: %d\n", msg, error_code);
+    fprintf(stderr, "%s: %d\n", msg, error_code);
     pthread_exit(&error_code);
 }
 
@@ -264,6 +263,10 @@ int read_frame(int soc,struct can_frame* frame,struct timeval* tv)
 
 void* read_poll_can(void* args)
 {
+#if DEBUG
+    printf("read_poll_can started\n");
+#endif
+
     can_read_args* read_args = (can_read_args*)args;
     int fd = read_args->can_sock;
     bool use_unordered_map = read_args->use_unordered_map;
@@ -351,7 +354,7 @@ void* read_poll_can(void* args)
                 }
 
 #if DEBUG
-                printf("%d bytes copied to TCP buffer", socketcan_bytes_available);
+                printf("%zu bytes copied to TCP buffer.\n", socketcan_bytes_available);
 #endif
                 hash_map.clear();
             }
@@ -369,7 +372,7 @@ void* read_poll_can(void* args)
                 }
 
 #if DEBUG
-                printf("%d bytes copied to TCP buffer.\n",count);
+                printf("%zu bytes copied to TCP buffer.\n", count);
 #endif
                 bufpnt = read_buf_can; //start filling up buffer again
                 count = 0;
@@ -382,11 +385,19 @@ void* read_poll_can(void* args)
     // No need to lock the mutex, as we do not care about predictable scheduling behaviour, as we are about to exit
     (void)pthread_cond_signal(&tcp_send_copied);
 
+#if DEBUG
+    printf("read_poll_can ended\n");
+#endif
+
     pthread_exit(NULL);
 }
 
 void* read_poll_tcp(void* args)
 {
+#if DEBUG
+    printf("read_poll_tcp started\n");
+#endif
+
     tcp_read_args* read_args = (tcp_read_args*)args;
     int tcp_socket = read_args->tcp_sock;
     int limit_recv_rate_hz = read_args->limit_recv_rate_hz;
@@ -418,12 +429,17 @@ void* read_poll_tcp(void* args)
 
         // don't want to perform the write inside mutex;
 #if DEBUG
-        printf("ready to send %d bytes\n",cpy_socketcan_bytes_available);
+        printf("ready to send %zu bytes\n", cpy_socketcan_bytes_available);
 #endif
         int n = write(tcp_socket, read_buf_tcp,cpy_socketcan_bytes_available);
-        if (n < cpy_socketcan_bytes_available)
+        if (n < 0)
         {
-            pthread_error("failed to sent all bytes over TCP", EXIT_FAILURE);
+            pthread_error("failed to write bytes over TCP socket", EXIT_FAILURE);
+        }
+        else if ((size_t)n < cpy_socketcan_bytes_available)
+        {
+            fprintf(stderr, "only send %d bytes of TCP message.\n", n);
+            pthread_error("failed to sent all bytes over TCP socket", EXIT_FAILURE);
         }
 #if DEBUG
         printf("%d bytes written to TCP\n",n);
@@ -442,11 +458,19 @@ void* read_poll_tcp(void* args)
         }
     }
 
+#if DEBUG
+    printf("read_poll_tcp ended\n");
+#endif
+
     pthread_exit(NULL);
 }
 
 void* write_poll(void* args)
 {
+#if DEBUG
+    printf("write_poll started\n");
+#endif
+
     // CAN write should be quick enough to do in this loop...
     can_write_sockets* socks = (can_write_sockets*)args;
     struct can_frame frame;
@@ -472,7 +496,7 @@ void* write_poll(void* args)
             pthread_error("Socket closed at other end... exiting", 0);
         }
 #if DEBUG
-        printf("%d bytes read from TCP.\n",num_bytes_tcp);
+        printf("%d bytes read from TCP.\n", num_bytes_tcp);
 #endif
         int num_frames = num_bytes_tcp / frame_sz;
 
@@ -490,15 +514,23 @@ void* write_poll(void* args)
             printf("\n");
 #endif
             int num_bytes_can = write(socks->can_sock, &frame, can_struct_sz);
-            if (num_bytes_can < can_struct_sz)
+            if (num_bytes_can < 0)
             {
-                printf("only send %d bytes of can message.\n",num_bytes_can);
+                pthread_error("failed to write bytes over CAN socket", EXIT_FAILURE);
+            }
+            else if ((size_t)num_bytes_can < can_struct_sz)
+            {
+                fprintf(stderr, "only send %d bytes of can message.\n", num_bytes_can);
                 pthread_error("failed to send complete CAN message!", EXIT_FAILURE);
             }
             bufpnt += frame_sz;
         }
         bufpnt = write_buf; //reset.
     }
+
+#if DEBUG
+    printf("write_poll ended\n");
+#endif
 
     pthread_exit(NULL);
 }
@@ -534,6 +566,10 @@ void print_frame(const timestamped_frame* tf)
 
 int tcpclient(const char *can_port, const char *hostname, int port, const struct can_filter *filter, int numfilter, bool use_unordered_map, int limit_recv_rate_hz)
 {
+#if DEBUG
+    printf("tcpclient started\n");
+#endif
+
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
 
@@ -563,9 +599,16 @@ int tcpclient(const char *can_port, const char *hostname, int port, const struct
 #endif
         tcp_socket = create_tcp_socket(hostname, port);
         sleep(1);
-    } while (tcp_socket == -1);
+    } while (poll && tcp_socket == -1);
 #if DEBUG
-    printf("\nConnection established\n");
+    if (tcp_socket != -1)
+    {
+        printf("\nTCP connection established\n");
+    }
+    else
+    {
+        printf("\n");
+    }
 #endif
 #else
     tcp_socket = create_tcp_socket(hostname, port);
@@ -610,15 +653,15 @@ int tcpclient(const char *can_port, const char *hostname, int port, const struct
         error("write thread failed", thread_rv);
     }
 
+#if DEBUG
+    printf("tcpclient ended\n");
+#endif
+
     return 0;
 }
 
 int main(int argc, char* argv[])
 {
-    int port;
-    char hostname[HOSTNAME_LEN];
-    char can_port[HOSTNAME_LEN];
-
     // arg parsing
     if (argc < 4)
     {
@@ -626,9 +669,9 @@ int main(int argc, char* argv[])
         exit(0);
     }
 
-    strncpy(can_port, argv[1], HOSTNAME_LEN);
-    strncpy(hostname, argv[2], HOSTNAME_LEN);
-    port = atoi(argv[3]);
+    char *can_port = argv[1];
+    char *hostname = argv[2];
+    int port = atoi(argv[3]);
 
     return tcpclient(can_port, hostname, port, NULL, 0, false, -1);
 }

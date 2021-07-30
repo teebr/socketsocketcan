@@ -1,6 +1,6 @@
 from socketsocketcan import TCPBus
 import can
-from datetime import datetime   
+from datetime import datetime
 from time import sleep
 
 bus = TCPBus(5000)

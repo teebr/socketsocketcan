@@ -40,6 +40,12 @@ class TCPClient(object):
     def pid(self):
         return self._tcp_client_process.pid
 
+    def is_alive(self):
+        self._tcp_client_process.is_alive()
+
+    def join(self, timeout=None):
+        self._tcp_client_process.join(timeout=timeout)
+
     def shutdown(self, timeout=None) -> Optional[int]:
         # Send SIGTERM to the process and wait for it to finish
         if self._tcp_client_process.is_alive():
