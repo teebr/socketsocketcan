@@ -3,7 +3,7 @@ import can
 from datetime import datetime
 from time import sleep
 
-bus = TCPBus(5000, 'localhost')
+bus = TCPBus(5000)
 print("socket connected!")
 
 #create a listener to print all received messages

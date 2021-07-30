@@ -5,7 +5,7 @@ from time import sleep, perf_counter
 from queue import Queue
 import struct
 
-bus = TCPBus(5000, 'localhost')
+bus = TCPBus(5000)
 print("socket connected!")
 
 class BinaryLogger(can.Listener):
