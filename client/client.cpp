@@ -434,7 +434,14 @@ void* read_poll_tcp(void* args)
         int n = write(tcp_socket, read_buf_tcp,cpy_socketcan_bytes_available);
         if (n < 0)
         {
-            pthread_error("failed to write bytes over TCP socket", EXIT_FAILURE);
+            if (errno == ENOBUFS)
+            {
+                pthread_error("no buffer space available on CAN socket", errno);
+            }
+            else
+            {
+                pthread_error("failed to write bytes over TCP socket", errno);
+            }
         }
         else if ((size_t)n < cpy_socketcan_bytes_available)
         {
@@ -516,7 +523,14 @@ void* write_poll(void* args)
             int num_bytes_can = write(socks->can_sock, &frame, can_struct_sz);
             if (num_bytes_can < 0)
             {
-                pthread_error("failed to write bytes over CAN socket", EXIT_FAILURE);
+                if (errno == ENOBUFS)
+                {
+                    pthread_error("no buffer space available on CAN socket", errno);
+                }
+                else
+                {
+                    pthread_error("failed to write bytes over CAN socket", errno);
+                }
             }
             else if ((size_t)num_bytes_can < can_struct_sz)
             {
