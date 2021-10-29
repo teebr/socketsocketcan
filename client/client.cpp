@@ -591,9 +591,10 @@ int tcpclient(const char *can_port, const char *hostname, int port, const struct
     int tcp_socket, can_socket, thread_rv;
 
     // initialising stuff
-    if (pthread_mutex_init(&read_mutex, NULL) != 0)
+    thread_rv = pthread_mutex_init(&read_mutex, NULL);
+    if (thread_rv != 0)
     {
-        error("mutex init has failed", EXIT_FAILURE);
+        error("mutex init has failed", thread_rv);
     }
 
     can_socket = open_can_socket(can_port, filter, numfilter);
